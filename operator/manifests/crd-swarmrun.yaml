@@ -1,0 +1,101 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: swarmruns.swarm.agentswarm.io
+spec:
+  group: swarm.agentswarm.io
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: CurrentLoop
+          type: integer
+          jsonPath: .status.currentLoop
+        - name: Confidence
+          type: number
+          jsonPath: .status.confidence
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required:
+                - prompt
+              properties:
+                prompt:
+                  type: string
+                maxLoops:
+                  type: integer
+                  default: 3
+                  minimum: 1
+                  maximum: 10
+                confidenceThreshold:
+                  type: number
+                  default: 0.85
+                  minimum: 0
+                  maximum: 1
+                personas:
+                  type: array
+                  items:
+                    type: string
+                model:
+                  type: string
+                  default: "anthropic/claude-sonnet-4-20250514"
+                resources:
+                  type: object
+                  properties:
+                    memory:
+                      type: string
+                    cpu:
+                      type: string
+                gitRepo:
+                  type: string
+                gitBranch:
+                  type: string
+                  default: "main"
+                timeout:
+                  type: string
+                  default: "2h"
+                priority:
+                  type: integer
+                  default: 2
+                  minimum: 0
+                  maximum: 4
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                beadsIssueId:
+                  type: string
+                podName:
+                  type: string
+                currentLoop:
+                  type: integer
+                confidence:
+                  type: number
+                startTime:
+                  type: string
+                  format: date-time
+                completionTime:
+                  type: string
+                  format: date-time
+                message:
+                  type: string
+  scope: Namespaced
+  names:
+    plural: swarmruns
+    singular: swarmrun
+    kind: SwarmRun
+    shortNames:
+      - sr

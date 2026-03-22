@@ -1,0 +1,262 @@
+<mxfile host="app.diagrams.net" agent="Claude" version="26.0.0">
+  <diagram id="architecture" name="Architecture">
+    <mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1200" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="Headless Agent Swarm — System Architecture" style="text;html=1;align=center;verticalAlign=middle;fontSize=20;fontStyle=1;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="400" y="20" width="500" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- K8s Cluster boundary -->
+        <mxCell id="k8s-cluster" value="Kubernetes Cluster (kind)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1;fontSize=14;verticalAlign=top;dashed=1;dashPattern=8 8;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="1520" height="1080" as="geometry" />
+        </mxCell>
+
+        <!-- ==================== OPERATOR ==================== -->
+        <mxCell id="operator-box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="80" y="130" width="380" height="340" as="geometry" />
+        </mxCell>
+        <mxCell id="operator-title" value="SwarmRun Operator (Deployment, 1 replica)" style="text;html=1;align=center;verticalAlign=middle;fontSize=13;fontStyle=1;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="90" y="140" width="360" height="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="watcher" value="Watcher&#xa;(K8s Informer)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="100" y="185" width="120" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="reconciler" value="Reconciler&#xa;(State Machine)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="240" y="185" width="120" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="concurrency" value="Concurrency&#xa;Controller&#xa;(max 5)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="100" y="255" width="120" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="beads-queue" value="Beads Queue&#xa;(bd CLI wrapper)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="240" y="255" width="120" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="pod-template" value="Pod Template&#xa;(Sidecar Generator)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="100" y="330" width="120" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="status-updater" value="Status Updater&#xa;(CRD /status)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="240" y="330" width="120" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="cleanup" value="Cleanup Manager&#xa;(retention, stale, orphans)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="160" y="400" width="200" height="45" as="geometry" />
+        </mxCell>
+
+        <!-- Operator internal arrows -->
+        <mxCell id="w2r" style="edgeStyle=orthogonalEdgeStyle;curved=1;" edge="1" source="watcher" target="reconciler" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="r2c" style="edgeStyle=orthogonalEdgeStyle;curved=1;" edge="1" source="reconciler" target="concurrency" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="r2b" style="edgeStyle=orthogonalEdgeStyle;curved=1;" edge="1" source="reconciler" target="beads-queue" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ==================== SWARM RUN POD (x5 max) ==================== -->
+        <mxCell id="pod-boundary" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="520" y="130" width="680" height="460" as="geometry" />
+        </mxCell>
+        <mxCell id="pod-title" value="Swarm Run Pod (Sidecar Pattern, max 5 concurrent)" style="text;html=1;align=center;verticalAlign=middle;fontSize=13;fontStyle=1;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="570" y="140" width="580" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- OpenCode container -->
+        <mxCell id="opencode-container" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="540" y="185" width="200" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="opencode-title" value="opencode (4Gi/2cpu)" style="text;html=1;align=center;verticalAlign=middle;fontSize=11;fontStyle=1;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="545" y="190" width="190" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="opencode-serve" value="opencode serve&#xa;:4096" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e6d0de;strokeColor=#996185;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="560" y="220" width="160" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="agent-sessions" value="Agent Sessions&#xa;(personas loaded&#xa;from .md files)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e6d0de;strokeColor=#996185;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="560" y="265" width="160" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="tools-plugins" value="Custom Tools + Plugins&#xa;swarm_send, swarm_guard" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e6d0de;strokeColor=#996185;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="560" y="320" width="160" height="35" as="geometry" />
+        </mxCell>
+
+        <!-- Orchestrator container -->
+        <mxCell id="orch-container" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="760" y="185" width="200" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="orch-title" value="orchestrator (2Gi/1cpu)" style="text;html=1;align=center;verticalAlign=middle;fontSize=11;fontStyle=1;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="765" y="190" width="190" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="loop-controller" value="Loop Controller&#xa;(max N loops)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="780" y="220" width="160" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="persona-loader" value="Persona Loader&#xa;+ Agent Spawner" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="780" y="265" width="160" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="review-agg" value="Review Aggregator&#xa;+ Confidence Scorer" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="780" y="310" width="160" height="35" as="geometry" />
+        </mxCell>
+
+        <!-- Beads container -->
+        <mxCell id="beads-container" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="540" y="385" width="200" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="beads-title" value="beads (1Gi/0.5cpu)" style="text;html=1;align=center;verticalAlign=middle;fontSize=11;fontStyle=1;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="545" y="390" width="190" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="beads-daemon" value="bd daemon :3307&#xa;(Dolt SQL + task graph)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="560" y="420" width="160" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- Playwright container -->
+        <mxCell id="pw-container" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="760" y="385" width="200" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="pw-title" value="playwright (2Gi/1cpu)" style="text;html=1;align=center;verticalAlign=middle;fontSize=11;fontStyle=1;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="765" y="390" width="190" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="pw-chromium" value="Headless Chromium&#xa;(on-demand for FE review)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e6d0de;strokeColor=#996185;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="780" y="420" width="160" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- Shared volume -->
+        <mxCell id="workspace" value="/workspace (emptyDir 10Gi)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="990" y="250" width="180" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="termlog" value="/dev/termination-log&#xa;+ /workspace/.swarm/result.json&#xa;SWARM_RUN_COMPLETE:{json}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=9;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="990" y="340" width="180" height="55" as="geometry" />
+        </mxCell>
+
+        <!-- Pod internal arrows -->
+        <mxCell id="orch2oc" value="SDK :4096" style="edgeStyle=orthogonalEdgeStyle;curved=1;fontSize=9;" edge="1" source="loop-controller" target="opencode-serve" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="orch2bd" value="CLI :3307" style="edgeStyle=orthogonalEdgeStyle;curved=1;fontSize=9;" edge="1" source="loop-controller" target="beads-daemon" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ==================== SHARED SERVICES ==================== -->
+        <mxCell id="shared-title" value="Shared Services" style="text;html=1;align=center;verticalAlign=middle;fontSize=13;fontStyle=1;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="80" y="620" width="150" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Mem0 -->
+        <mxCell id="mem0" value="Mem0 API&#xa;(Deployment)&#xa;:8080" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="80" y="665" width="150" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="mem0-scope" value="agent_id scoping&#xa;per-persona memory" style="text;html=1;align=center;verticalAlign=middle;fontSize=9;fontStyle=2;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="80" y="735" width="150" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Qdrant -->
+        <mxCell id="qdrant" value="Qdrant&#xa;(StatefulSet)&#xa;:6333" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="270" y="660" width="140" height="75" as="geometry" />
+        </mxCell>
+
+        <!-- Dashboard -->
+        <mxCell id="dashboard" value="Dashboard&#xa;(Deployment)&#xa;:3000" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="450" y="665" width="150" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="dashboard-desc" value="SSE-powered web UI&#xa;agent status, locks,&#xa;loop progress, scores" style="text;html=1;align=center;verticalAlign=middle;fontSize=9;fontStyle=2;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="450" y="735" width="150" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- ==================== SWARMRUN CRD ==================== -->
+        <mxCell id="crd-box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="80" y="510" width="380" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="crd-title" value="SwarmRun CRD" style="text;html=1;align=center;verticalAlign=middle;fontSize=12;fontStyle=1;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="90" y="515" width="120" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="crd-phases" value="Phases: Queued → Running → Reviewing → Completed | Failed | TimedOut&#xa;Queue: Beads bd (max 5 concurrent, overflow queued by priority)" style="text;html=1;align=left;verticalAlign=middle;fontSize=10;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="95" y="540" width="350" height="45" as="geometry" />
+        </mxCell>
+
+        <!-- ==================== USER ==================== -->
+        <mxCell id="user" value="User" style="shape=actor;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="640" width="60" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="kubectl" value="kubectl apply -f&#xa;swarmrun.yaml" style="text;html=1;align=center;verticalAlign=middle;fontSize=10;fontStyle=2;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1240" y="730" width="130" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- ==================== KEY ARROWS ==================== -->
+        <!-- Operator watches CRD -->
+        <mxCell id="op2crd" value="watches" style="edgeStyle=orthogonalEdgeStyle;curved=1;fontSize=10;startArrow=none;endArrow=classic;" edge="1" source="watcher" target="crd-box" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Operator creates pods -->
+        <mxCell id="op2pod" value="creates / deletes" style="edgeStyle=orthogonalEdgeStyle;curved=1;fontSize=10;dashed=1;" edge="1" source="pod-template" target="pod-boundary" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- User creates CRD -->
+        <mxCell id="user2crd" value="submits" style="edgeStyle=orthogonalEdgeStyle;curved=1;fontSize=10;" edge="1" source="user" target="crd-box" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Pod to Mem0 -->
+        <mxCell id="pod2mem0" value="MCP" style="edgeStyle=orthogonalEdgeStyle;curved=1;fontSize=9;dashed=1;" edge="1" source="orch-container" target="mem0" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- User to Dashboard -->
+        <mxCell id="user2dash" value="views" style="edgeStyle=orthogonalEdgeStyle;curved=1;fontSize=10;" edge="1" source="user" target="dashboard" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Mem0 to Qdrant -->
+        <mxCell id="mem2q" value="" style="edgeStyle=orthogonalEdgeStyle;curved=1;fontSize=9;" edge="1" source="mem0" target="qdrant" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ==================== LEGEND ==================== -->
+        <mxCell id="legend-box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="1240" y="130" width="290" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-title" value="Legend" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;fontStyle=1;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1250" y="135" width="60" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="leg1" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="1260" y="165" width="20" height="15" as="geometry" />
+        </mxCell>
+        <mxCell id="leg1t" value="K8s Deployment / Service" style="text;html=1;align=left;fontSize=10;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1290" y="163" width="200" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="leg2" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="1260" y="190" width="20" height="15" as="geometry" />
+        </mxCell>
+        <mxCell id="leg2t" value="Swarm Run Pod (sidecar)" style="text;html=1;align=left;fontSize=10;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1290" y="188" width="200" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="leg3" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="1260" y="215" width="20" height="15" as="geometry" />
+        </mxCell>
+        <mxCell id="leg3t" value="Container (OpenCode / Playwright)" style="text;html=1;align=left;fontSize=10;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1290" y="213" width="200" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="leg4" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="1260" y="240" width="20" height="15" as="geometry" />
+        </mxCell>
+        <mxCell id="leg4t" value="Orchestrator / Operator component" style="text;html=1;align=left;fontSize=10;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1290" y="238" width="200" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="leg5" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="1260" y="265" width="20" height="15" as="geometry" />
+        </mxCell>
+        <mxCell id="leg5t" value="Beads (task management)" style="text;html=1;align=left;fontSize=10;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1290" y="263" width="200" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="leg6" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="1260" y="290" width="20" height="15" as="geometry" />
+        </mxCell>
+        <mxCell id="leg6t" value="SwarmRun CRD / User" style="text;html=1;align=left;fontSize=10;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1290" y="288" width="200" height="20" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

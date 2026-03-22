@@ -1,0 +1,12 @@
+apiVersion: swarm.agentswarm.io/v1alpha1
+kind: SwarmRun
+metadata:
+  name: demo-dashboard
+spec:
+  prompt: "Build a React dashboard with authentication, user management, and charts"
+  maxLoops: 2
+  personas:
+    - frontend-dev
+    - backend-dev
+  priority: 1
+  timeout: "1h"

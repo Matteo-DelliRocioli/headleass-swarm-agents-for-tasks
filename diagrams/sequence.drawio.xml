@@ -1,0 +1,470 @@
+<mxfile host="app.diagrams.net" agent="Claude" version="26.0.0">
+  <diagram id="sequence" name="Sequence Diagram">
+    <mxGraphModel dx="1800" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2400" pageHeight="2800" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="Headless Agent Swarm — Full Lifecycle Sequence Diagram" style="text;html=1;align=center;verticalAlign=middle;fontSize=18;fontStyle=1;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="500" y="10" width="600" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- ==================== ACTORS (lifelines) ==================== -->
+        <mxCell id="user-head" value="User" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;portConstraint=eastwest;participant=umlActor;fillColor=#ffe6cc;strokeColor=#d79b00;size=30;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="70" y="60" width="30" height="2700" as="geometry" />
+        </mxCell>
+        <mxCell id="kubectl-head" value="kubectl" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;portConstraint=eastwest;fillColor=#f5f5f5;strokeColor=#666666;size=40;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="180" y="60" width="80" height="2700" as="geometry" />
+        </mxCell>
+        <mxCell id="k8s-head" value="K8s API" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;portConstraint=eastwest;fillColor=#dae8fc;strokeColor=#6c8ebf;size=40;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="330" y="60" width="80" height="2700" as="geometry" />
+        </mxCell>
+        <mxCell id="operator-head" value="Operator" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;portConstraint=eastwest;fillColor=#fff2cc;strokeColor=#d6b656;size=40;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="490" y="60" width="80" height="2700" as="geometry" />
+        </mxCell>
+        <mxCell id="beads-head" value="Beads" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;portConstraint=eastwest;fillColor=#f8cecc;strokeColor=#b85450;size=40;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="650" y="60" width="80" height="2700" as="geometry" />
+        </mxCell>
+        <mxCell id="opencode-head" value="OpenCode" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;portConstraint=eastwest;fillColor=#e1d5e7;strokeColor=#9673a6;size=40;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="820" y="60" width="80" height="2700" as="geometry" />
+        </mxCell>
+        <mxCell id="orch-head" value="Orchestrator" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;portConstraint=eastwest;fillColor=#fff2cc;strokeColor=#d6b656;size=40;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="990" y="60" width="90" height="2700" as="geometry" />
+        </mxCell>
+        <mxCell id="agent-head" value="Subagent" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;portConstraint=eastwest;fillColor=#d5e8d4;strokeColor=#82b366;size=40;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1170" y="60" width="80" height="2700" as="geometry" />
+        </mxCell>
+        <mxCell id="reviewer-head" value="Review Agent" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;portConstraint=eastwest;fillColor=#d5e8d4;strokeColor=#82b366;size=40;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1350" y="60" width="90" height="2700" as="geometry" />
+        </mxCell>
+        <mxCell id="mem0-head" value="Mem0" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;portConstraint=eastwest;fillColor=#dae8fc;strokeColor=#6c8ebf;size=40;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1530" y="60" width="80" height="2700" as="geometry" />
+        </mxCell>
+
+        <!-- ==================== PHASE 0: SUBMISSION ==================== -->
+        <mxCell id="phase0" value="Phase 0: Task Submission &amp; Queuing" style="text;html=1;align=left;verticalAlign=middle;fontSize=14;fontStyle=5;fillColor=#ffe6cc;strokeColor=#d79b00;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="20" y="140" width="280" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- User -> kubectl: apply SwarmRun -->
+        <mxCell id="s1" value="kubectl apply -f swarmrun.yaml" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="85" y="190" as="sourcePoint" />
+            <mxPoint x="220" y="190" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- kubectl -> K8s: create SwarmRun CR -->
+        <mxCell id="s2" value="POST /apis/swarm.agentswarm.io/v1alpha1/swarmruns" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="220" y="220" as="sourcePoint" />
+            <mxPoint x="370" y="220" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- K8s -> Operator: informer event (ADDED) -->
+        <mxCell id="s3" value="informer: SwarmRun ADDED" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;dashed=1;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="370" y="260" as="sourcePoint" />
+            <mxPoint x="530" y="260" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Operator -> Beads: bd create -->
+        <mxCell id="s4" value="bd create &quot;SwarmRun: ...&quot; -t task -p 1 --json" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="530" y="300" as="sourcePoint" />
+            <mxPoint x="690" y="300" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="s4r" value="issue ID" style="html=1;verticalAlign=bottom;endArrow=open;rounded=0;dashed=1;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="690" y="325" as="sourcePoint" />
+            <mxPoint x="530" y="325" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Operator -> K8s: patch status phase=Queued -->
+        <mxCell id="s5" value="PATCH status: phase=Queued, beadsIssueId=..." style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="530" y="360" as="sourcePoint" />
+            <mxPoint x="370" y="360" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ==================== PHASE 1: SLOT ACQUISITION ==================== -->
+        <mxCell id="phase1" value="Phase 1: Slot Acquisition &amp; Pod Creation" style="text;html=1;align=left;verticalAlign=middle;fontSize=14;fontStyle=5;fillColor=#ffe6cc;strokeColor=#d79b00;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="20" y="400" width="280" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- Operator: tryAcquireSlot -->
+        <mxCell id="s6" value="tryAcquireSlot(): count pods + beads" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="530" y="450" as="sourcePoint" />
+            <mxPoint x="370" y="450" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="s6r" value="slots available (< 5)" style="html=1;verticalAlign=bottom;endArrow=open;rounded=0;dashed=1;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="370" y="475" as="sourcePoint" />
+            <mxPoint x="530" y="475" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Operator -> Beads: bd update --claim -->
+        <mxCell id="s7" value="bd update &lt;id&gt; --claim (atomic)" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="530" y="510" as="sourcePoint" />
+            <mxPoint x="690" y="510" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="s7r" value="claimed ✓" style="html=1;verticalAlign=bottom;endArrow=open;rounded=0;dashed=1;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="690" y="535" as="sourcePoint" />
+            <mxPoint x="530" y="535" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Operator -> K8s: create sidecar pod -->
+        <mxCell id="s8" value="POST pod (4 containers: opencode, beads, orchestrator, playwright)" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="530" y="570" as="sourcePoint" />
+            <mxPoint x="370" y="570" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Operator -> K8s: patch status phase=Running -->
+        <mxCell id="s9" value="PATCH status: phase=Running, podName=swarm-run-..." style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="530" y="610" as="sourcePoint" />
+            <mxPoint x="370" y="610" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ==================== PHASE 2: STARTUP ==================== -->
+        <mxCell id="phase2" value="Phase 2: Pod Startup (Sidecar Ordering)" style="text;html=1;align=left;verticalAlign=middle;fontSize=14;fontStyle=5;fillColor=#d5e8d4;strokeColor=#82b366;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="20" y="650" width="280" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- OpenCode starts -->
+        <mxCell id="s10" value="opencode serve :4096 (starts)" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=10;fillColor=#e1d5e7;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="860" y="700" as="sourcePoint" />
+            <mxPoint x="860" y="720" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Orchestrator polls -->
+        <mxCell id="s11" value="entrypoint.sh: poll localhost:4096/health" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=10;dashed=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1035" y="730" as="sourcePoint" />
+            <mxPoint x="860" y="730" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="s11r" value="200 OK" style="html=1;verticalAlign=bottom;endArrow=open;rounded=0;dashed=1;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="860" y="755" as="sourcePoint" />
+            <mxPoint x="1035" y="755" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="s12" value="entrypoint.sh: poll localhost:3307 (beads)" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=10;dashed=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1035" y="785" as="sourcePoint" />
+            <mxPoint x="690" y="785" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="s12r" value="ready" style="html=1;verticalAlign=bottom;endArrow=open;rounded=0;dashed=1;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="690" y="810" as="sourcePoint" />
+            <mxPoint x="1035" y="810" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="s13" value="Dependencies ready → start orchestrator.js" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=10;fillColor=#fff2cc;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1035" y="840" as="sourcePoint" />
+            <mxPoint x="1035" y="860" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ==================== PHASE 3: TASK DECOMPOSITION ==================== -->
+        <mxCell id="phase3" value="Phase 3: Task Decomposition (Plan Mode)" style="text;html=1;align=left;verticalAlign=middle;fontSize=14;fontStyle=5;fillColor=#fff2cc;strokeColor=#d6b656;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="20" y="880" width="280" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- Orchestrator creates epic -->
+        <mxCell id="s14" value="bd create epic + subtasks with dependencies" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1035" y="930" as="sourcePoint" />
+            <mxPoint x="690" y="930" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Orchestrator loads personas -->
+        <mxCell id="s15" value="Load persona .md files, map to tasks" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1035" y="970" as="sourcePoint" />
+            <mxPoint x="1035" y="990" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Orchestrator writes shared context -->
+        <mxCell id="s16" value="m.add(context, agent_id='orchestrator')" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1035" y="1010" as="sourcePoint" />
+            <mxPoint x="1570" y="1010" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ==================== PHASE 4: IMPLEMENTATION ==================== -->
+        <mxCell id="phase4" value="Phase 4: Implementation (Agent Execution)" style="text;html=1;align=left;verticalAlign=middle;fontSize=14;fontStyle=5;fillColor=#d5e8d4;strokeColor=#82b366;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="20" y="1060" width="280" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- Loop box -->
+        <mxCell id="loop-impl" value="loop [for each ready task from bd ready]" style="shape=umlFrame;whiteSpace=wrap;html=1;width=250;height=20;boundedLbl=1;verticalAlign=top;align=left;spacingLeft=5;fontSize=10;fillColor=#f5f5f5;strokeColor=#999999;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="650" y="1100" width="960" height="350" as="geometry" />
+        </mxCell>
+
+        <!-- Orchestrator -> Beads: claim task -->
+        <mxCell id="s17" value="bd update &lt;task&gt; --claim" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1035" y="1140" as="sourcePoint" />
+            <mxPoint x="690" y="1140" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Orchestrator -> OpenCode: create session -->
+        <mxCell id="s18" value="client.session.create({ agentID: persona })" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1035" y="1180" as="sourcePoint" />
+            <mxPoint x="860" y="1180" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- OpenCode spawns subagent -->
+        <mxCell id="s19" value="spawn agent session with persona" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="860" y="1220" as="sourcePoint" />
+            <mxPoint x="1210" y="1220" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Subagent works -->
+        <mxCell id="s20" value="implements code (read, write, edit, bash)" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1210" y="1260" as="sourcePoint" />
+            <mxPoint x="1210" y="1280" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Subagent writes to Mem0 -->
+        <mxCell id="s21" value="m.add(decisions, agent_id=persona)" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1210" y="1300" as="sourcePoint" />
+            <mxPoint x="1570" y="1300" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Subagent -> Beads: close task -->
+        <mxCell id="s22" value="bd close &lt;task&gt;" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1210" y="1340" as="sourcePoint" />
+            <mxPoint x="690" y="1340" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Subagent -> OpenCode: session complete -->
+        <mxCell id="s23" value="session idle / complete" style="html=1;verticalAlign=bottom;endArrow=open;rounded=0;dashed=1;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1210" y="1380" as="sourcePoint" />
+            <mxPoint x="860" y="1380" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- OpenCode -> Orchestrator: result -->
+        <mxCell id="s24" value="session result returned" style="html=1;verticalAlign=bottom;endArrow=open;rounded=0;dashed=1;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="860" y="1410" as="sourcePoint" />
+            <mxPoint x="1035" y="1410" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ==================== PHASE 5: REVIEW ==================== -->
+        <mxCell id="phase5" value="Phase 5: Parallel Review" style="text;html=1;align=left;verticalAlign=middle;fontSize=14;fontStyle=5;fillColor=#d5e8d4;strokeColor=#82b366;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="20" y="1480" width="280" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- Parallel box -->
+        <mxCell id="par-review" value="par [N review agents in parallel]" style="shape=umlFrame;whiteSpace=wrap;html=1;width=220;height=20;boundedLbl=1;verticalAlign=top;align=left;spacingLeft=5;fontSize=10;fillColor=#f5f5f5;strokeColor=#999999;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="820" y="1520" width="790" height="200" as="geometry" />
+        </mxCell>
+
+        <!-- Orchestrator -> OpenCode: spawn review agents -->
+        <mxCell id="s25" value="spawn review sessions (read-only tools)" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1035" y="1560" as="sourcePoint" />
+            <mxPoint x="860" y="1560" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- OpenCode -> Review agents -->
+        <mxCell id="s26" value="spawn review agent (security, quality, arch)" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="860" y="1600" as="sourcePoint" />
+            <mxPoint x="1395" y="1600" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Review agents read from Mem0 -->
+        <mxCell id="s27" value="m.search(query, user_id=run)" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1395" y="1640" as="sourcePoint" />
+            <mxPoint x="1570" y="1640" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Review agents return scores -->
+        <mxCell id="s28" value="{ score: 0.87, issues: [...] }" style="html=1;verticalAlign=bottom;endArrow=open;rounded=0;dashed=1;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1395" y="1680" as="sourcePoint" />
+            <mxPoint x="1035" y="1680" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ==================== PHASE 6: CONFIDENCE SCORING ==================== -->
+        <mxCell id="phase6" value="Phase 6: Master Review &amp; Confidence Scoring" style="text;html=1;align=left;verticalAlign=middle;fontSize=14;fontStyle=5;fillColor=#fff2cc;strokeColor=#d6b656;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="20" y="1750" width="310" height="25" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s29" value="aggregate scores: weighted confidence = 0.87" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1035" y="1800" as="sourcePoint" />
+            <mxPoint x="1035" y="1825" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Alt box: confidence check -->
+        <mxCell id="alt-conf" value="alt [confidence >= threshold]" style="shape=umlFrame;whiteSpace=wrap;html=1;width=200;height=20;boundedLbl=1;verticalAlign=top;align=left;spacingLeft=5;fontSize=10;fillColor=#f5f5f5;strokeColor=#999999;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="490" y="1850" width="1120" height="250" as="geometry" />
+        </mxCell>
+
+        <!-- Alt: confidence met -->
+        <mxCell id="s30" value="[confidence met] Write SWARM_RUN_COMPLETE to /dev/termination-log + result.json" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1035" y="1895" as="sourcePoint" />
+            <mxPoint x="1035" y="1920" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="s31" value="process.exit(0)" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=10;strokeColor=#82b366;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1035" y="1940" as="sourcePoint" />
+            <mxPoint x="1035" y="1960" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Divider -->
+        <mxCell id="alt-divider" value="" style="line;strokeWidth=1;dashed=1;strokeColor=#999999;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="500" y="1980" as="sourcePoint" />
+            <mxPoint x="1600" y="1980" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="alt-else" value="[else: create follow-up tasks → loop back to Phase 4]" style="text;html=1;align=left;fontSize=10;fontStyle=2;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="510" y="1985" width="350" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- Follow-up tasks -->
+        <mxCell id="s32" value="bd create follow-up tasks" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1035" y="2020" as="sourcePoint" />
+            <mxPoint x="690" y="2020" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="s33" value="loop++ (if < MAX_LOOPS)" style="html=1;verticalAlign=bottom;endArrow=open;rounded=0;dashed=1;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1035" y="2060" as="sourcePoint" />
+            <mxPoint x="1035" y="2080" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ==================== PHASE 7: TERMINATION ==================== -->
+        <mxCell id="phase7" value="Phase 7: Termination &amp; Queue Drain" style="text;html=1;align=left;verticalAlign=middle;fontSize=14;fontStyle=5;fillColor=#f8cecc;strokeColor=#b85450;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="20" y="2130" width="280" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- Operator detects termination -->
+        <mxCell id="s34" value="detect: orchestrator container terminated (exit 0)" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;dashed=1;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="370" y="2185" as="sourcePoint" />
+            <mxPoint x="530" y="2185" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Operator reads termination message -->
+        <mxCell id="s35" value="read: pod.status.containerStatuses[orchestrator].state.terminated.message" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="530" y="2220" as="sourcePoint" />
+            <mxPoint x="370" y="2220" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="s35r" value="SWARM_RUN_COMPLETE:{json}" style="html=1;verticalAlign=bottom;endArrow=open;rounded=0;dashed=1;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="370" y="2250" as="sourcePoint" />
+            <mxPoint x="530" y="2250" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Operator -> Beads: close -->
+        <mxCell id="s36" value="bd close &lt;run-issue&gt;" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="530" y="2290" as="sourcePoint" />
+            <mxPoint x="690" y="2290" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Operator -> K8s: patch status Completed -->
+        <mxCell id="s37" value="PATCH status: phase=Completed, confidence=0.87, results={...}" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="530" y="2330" as="sourcePoint" />
+            <mxPoint x="370" y="2330" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Operator -> K8s: delete pod -->
+        <mxCell id="s38" value="DELETE pod swarm-run-..." style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=10;strokeColor=#b85450;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="530" y="2370" as="sourcePoint" />
+            <mxPoint x="370" y="2370" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Operator: drain queue -->
+        <mxCell id="s39" value="drainQueue(): check for Queued SwarmRuns, start next" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="530" y="2410" as="sourcePoint" />
+            <mxPoint x="530" y="2435" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ==================== NOTES ==================== -->
+        <mxCell id="note1" value="Session keys: agent:&lt;persona&gt;:task:&lt;beads-id&gt;&#xa;Visibility: siblings see each other via roster&#xa;File locks: one agent per file (swarm_guard plugin)&#xa;Tools: review agents have write/edit/bash DENIED" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;size=15;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="20" y="2500" width="350" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="note2" value="Two-level termination:&#xa;L1: Subagent → Orchestrator (SDK session.idle + bd close)&#xa;L2: Orchestrator → Operator (SWARM_RUN_COMPLETE + exit code)&#xa;Exit codes: 0=success, 1=failure, 2=max_loops_reached" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;size=15;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="400" y="2500" width="350" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="note3" value="Concurrency: max 5 pods, Beads queue for overflow&#xa;Loop limit: MAX_LOOPS strictly enforced&#xa;Confidence threshold: weighted score from N reviewers&#xa;Memory: Mem0 with agent_id scoping per persona" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;size=15;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="780" y="2500" width="350" height="80" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

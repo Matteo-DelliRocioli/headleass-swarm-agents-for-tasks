@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Build output
+dist/
+*.js.map
+*.d.ts.map
+
+# Dolt database files (Beads)
+.dolt/
+*.db
+
+# Beads (stealth mode — not part of the repo)
+.beads/
+AGENTS.md
+
+# OpenClaw reference clone (not part of this project)
+openclaw/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment / Secrets
+.env
+.env.local
+*.pem
+credentials.json
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Temporary files
+/tmp/
+*.log
