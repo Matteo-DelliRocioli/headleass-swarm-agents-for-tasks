@@ -61,23 +61,35 @@ export function makeSwarmRun(
   };
 }
 
-/** Mock K8s CoreV1Api with configurable pod list */
+/** Mock K8s CoreV1Api with stateful pod tracking */
 export function makeMockCoreApi(activePods: string[] = []) {
-  const pods = activePods.map((name) => ({
+  const pods: Array<{ metadata: { name: string; labels: Record<string, string> }; status: { phase: string } }> = activePods.map((name) => ({
     metadata: { name, labels: { app: "agent-swarm" } },
     status: { phase: "Running" },
   }));
 
   return {
-    listNamespacedPod: async () => ({ items: pods }),
-    createNamespacedPod: async () => ({}),
+    listNamespacedPod: async () => ({ items: [...pods] }),
+    createNamespacedPod: async ({ body }: { namespace: string; body: any }) => {
+      // Track newly created pods so concurrency checks see them
+      const name = body?.metadata?.name ?? `pod-${Date.now()}`;
+      pods.push({
+        metadata: { name, labels: { app: "agent-swarm" } },
+        status: { phase: "Running" },
+      });
+      return {};
+    },
     readNamespacedPod: async ({ name }: { name: string }) => {
       const pod = pods.find((p) => p.metadata.name === name);
       if (!pod) throw new Error("404 Not Found");
       return pod;
     },
-    deleteNamespacedPod: async () => ({}),
-    _pods: pods, // Exposed for test manipulation
+    deleteNamespacedPod: async ({ name }: { name: string }) => {
+      const idx = pods.findIndex((p) => p.metadata.name === name);
+      if (idx !== -1) pods.splice(idx, 1);
+      return {};
+    },
+    _pods: pods,
   };
 }
 

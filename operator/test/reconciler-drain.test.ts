@@ -104,37 +104,45 @@ describe("Reconciler — queue drain", () => {
   });
 
   describe("6 runs submitted, max 5", () => {
-    it("scenario: submit 6, only 5 get Running", async () => {
-      // Simulate: 6 new SwarmRuns arrive, all go through handleNew → Queued → drainQueue
-      setup([], []);
+    it("scenario: 6 queued runs, drainQueue starts exactly 5", async () => {
+      // 6 runs already in Queued state, 0 active pods → drainQueue should start 5
+      const queued = Array.from({ length: 6 }, (_, i) =>
+        makeSwarmRun(`run-${i + 1}`, "Queued"),
+      );
+      setup([], queued);
 
-      // Step 1: Reconcile 6 new runs (no status yet → handleNew)
-      const runs = Array.from({ length: 6 }, (_, i) => makeSwarmRun(`run-${i + 1}`));
-
-      // handleNew creates beads issue and sets phase to Queued
-      // Then calls drainQueue which starts runs up to max
-      // We simulate this by reconciling each run sequentially
-
-      for (const run of runs) {
-        await reconciler.reconcile(run);
-      }
+      await reconciler.drainQueue();
 
       const updates = statusUpdater.getUpdates();
-
-      // Each new run gets Queued first
-      const queuedUpdates = updates.filter((u) => u.phase === "Queued");
-      expect(queuedUpdates.length).toBe(6);
-
-      // drainQueue runs after each handleNew, starting queued runs
       const runningUpdates = updates.filter((u) => u.phase === "Running");
-      // After the first 5 runs are queued + drained, the 6th cannot start
-      // because drainQueue sees 5 active pods (from previous creates)
-      // However, in our mock, listNamespacedPod returns a fixed set,
-      // so we need to update the mock between reconciles.
-      // This test validates the drainQueue logic path is correct.
-      // The exact count depends on mock pod growth, which we test
-      // more precisely in the drainQueue-specific tests above.
-      expect(runningUpdates.length).toBeGreaterThanOrEqual(1);
+
+      // Exactly 5 should start (mock pods grow as createNamespacedPod is called)
+      expect(runningUpdates.length).toBe(5);
+
+      // The 6th should NOT have started
+      const startedNames = new Set(runningUpdates.map((u) => u.name));
+      const notStarted = queued.filter((r) => !startedNames.has(r.metadata.name));
+      expect(notStarted.length).toBe(1);
+    });
+
+    it("scenario: after one completes, 6th starts", async () => {
+      // 5 active pods, 1 queued run
+      const queued = [makeSwarmRun("run-6", "Queued")];
+      setup(["p1", "p2", "p3", "p4", "p5"], queued);
+
+      // No slot → nothing starts
+      await reconciler.drainQueue();
+      expect(statusUpdater.getUpdates().filter((u) => u.phase === "Running").length).toBe(0);
+
+      // Simulate one pod completing (remove from pod list)
+      coreApi._pods.splice(0, 1); // Remove p1
+
+      // Now drain again → should start run-6
+      await reconciler.drainQueue();
+      const updates = statusUpdater.getUpdates();
+      const runningUpdates = updates.filter((u) => u.phase === "Running");
+      expect(runningUpdates.length).toBe(1);
+      expect(runningUpdates[0].name).toBe("run-6");
     });
   });
 });
