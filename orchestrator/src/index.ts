@@ -11,6 +11,8 @@ import { loadPersonas, matchPersonaToTask } from "./persona-loader.js";
 import { spawnAgent, spawnReviewer, spawnPlanner, reviewPlan, revisePlan, type PlannerOutput } from "./agent-spawner.js";
 import { aggregateReviews, type ReviewResult } from "./review-aggregator.js";
 import { addMemory, type Mem0Config } from "./mem0.js";
+import { getQueueStats, drainQueue } from "./message-queue.js";
+import { UsageAccumulator } from "./usage-tracker.js";
 
 // ---------------------------------------------------------------------------
 // Termination signal — writes result to /dev/termination-log + result.json
@@ -61,7 +63,7 @@ async function main(): Promise<void> {
   const startTime = Date.now();
   const errors: string[] = [];
   const loopDurations: number[] = [];
-  const tokenUsage: Record<string, number> = {};
+  const usage = new UsageAccumulator(config.model);
   let totalTasks = 0;
   let completedTasks = 0;
 
@@ -275,7 +277,7 @@ async function main(): Promise<void> {
         }
 
         const result = await spawnAgent(persona, task, config);
-        tokenUsage[persona.id] = (tokenUsage[persona.id] ?? 0) + 1; // Placeholder — real token tracking TBD
+        usage.add(persona.id, result.usage);
         completedTasks++;
 
         logger.info("Agent completed", {
@@ -302,6 +304,7 @@ async function main(): Promise<void> {
     const reviewPromises = reviewPersonas.map(async (persona) => {
       try {
         const output = await spawnReviewer(persona, currentLoop, config);
+        usage.add(persona.id, output.usage);
         return {
           reviewerId: persona.id,
           score: output.score,
@@ -353,6 +356,20 @@ async function main(): Promise<void> {
       "loop-summary",
     );
 
+    // Log usage and cost for this run so far
+    usage.logSummary();
+
+    // Log queue stats and drain pending messages between loops
+    const queueStats = await getQueueStats(config.swarmStatePath);
+    if (queueStats.pendingMessages > 0) {
+      logger.info("Queue stats before drain", {
+        pending: queueStats.pendingMessages,
+        urgent: queueStats.urgentPending,
+        perAgent: queueStats.perAgent,
+      });
+      await drainQueue(config.swarmStatePath);
+    }
+
     // Check termination conditions
     if (aggregated.confidence >= config.confidenceThreshold) {
       logger.info("Confidence threshold met, stopping");
@@ -366,7 +383,7 @@ async function main(): Promise<void> {
         completedTasks,
         followUpTasks: 0,
         deferredTaskIds: [],
-        tokenUsage: { total: Object.values(tokenUsage).reduce((a, b) => a + b, 0), perAgent: tokenUsage },
+        tokenUsage: { total: usage.getTotal(), perAgent: usage.getPerAgent() },
         duration: { totalMs: Date.now() - startTime, perLoop: loopDurations },
         errors,
       }, config.swarmStatePath);
@@ -385,7 +402,7 @@ async function main(): Promise<void> {
         completedTasks,
         followUpTasks: 0,
         deferredTaskIds: [],
-        tokenUsage: { total: Object.values(tokenUsage).reduce((a, b) => a + b, 0), perAgent: tokenUsage },
+        tokenUsage: { total: usage.getTotal(), perAgent: usage.getPerAgent() },
         duration: { totalMs: Date.now() - startTime, perLoop: loopDurations },
         errors,
       }, config.swarmStatePath);
@@ -415,7 +432,7 @@ async function main(): Promise<void> {
         completedTasks,
         followUpTasks: deferredIds.length,
         deferredTaskIds: deferredIds,
-        tokenUsage: { total: Object.values(tokenUsage).reduce((a, b) => a + b, 0), perAgent: tokenUsage },
+        tokenUsage: { total: usage.getTotal(), perAgent: usage.getPerAgent() },
         duration: { totalMs: Date.now() - startTime, perLoop: loopDurations },
         errors,
       }, config.swarmStatePath);

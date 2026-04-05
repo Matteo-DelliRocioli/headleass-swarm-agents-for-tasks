@@ -8,6 +8,7 @@ import type { Persona } from "./persona-loader.js";
 import type { BeadsTask } from "./beads.js";
 import { listTasks } from "./beads.js";
 import { searchAll, formatMemoriesAsContext, type Mem0Config } from "./mem0.js";
+import { extractUsage, type UsageData } from "./usage-tracker.js";
 
 // The OpenCode SDK client type — we use dynamic import since it may not be
 // available at compile time in all environments.
@@ -92,8 +93,9 @@ ${memoryContext ? memoryContext + "\n\n" : ""}### Rules
 - You MUST claim your task before starting: use the beads-claim tool with task ID "${task.id}"
 - When finished, close your task: use the beads-close tool with task ID "${task.id}"
 - Do NOT modify files in .claude/ directories
-- If you need to communicate with another agent, use the swarm-send tool
-- Check swarm-status to see file locks before editing shared files
+- If you need to communicate with another agent, use **swarm-send** (they'll see it via **swarm-receive**)
+- Check **swarm-receive** at the start of your task for messages from other agents
+- Check **swarm-status** to see file locks before editing shared files
 - Use **mem0-remember** to store key decisions, discoveries, or context for other agents
 - Use **mem0-recall** to search for memories from other agents (scope "all") or your own (scope "own")
 
@@ -471,6 +473,7 @@ export interface SpawnResult {
   sessionId: string;
   persona: Persona;
   task: BeadsTask;
+  usage: UsageData;
 }
 
 /**
@@ -506,7 +509,7 @@ export async function spawnAgent(
     ? config.model.split("/", 2)
     : ["anthropic", config.model];
 
-  await client.session.prompt({
+  const response = await client.session.prompt({
     path: { id: session.id },
     body: {
       model: { providerID: provider, modelID: model },
@@ -514,8 +517,9 @@ export async function spawnAgent(
     },
   });
 
-  logger.info("Agent spawned", { sessionId: session.id, persona: persona.id, task: task.id });
-  return { sessionId: session.id, persona, task };
+  const usage = extractUsage(response);
+  logger.info("Agent spawned", { sessionId: session.id, persona: persona.id, task: task.id, tokens: usage.totalTokens });
+  return { sessionId: session.id, persona, task, usage };
 }
 
 export interface ReviewerOutput {
@@ -528,6 +532,7 @@ export interface ReviewerOutput {
     line?: number;
     description: string;
   }>;
+  usage: UsageData;
 }
 
 const REVIEW_JSON_SCHEMA = {
@@ -608,14 +613,16 @@ export async function spawnReviewer(
     },
   });
 
-  // Parse the structured review output
+  // Parse the structured review output and extract usage
   const parsed = extractReviewOutput(response, persona.id);
+  const usage = extractUsage(response);
 
   logger.info("Reviewer completed", {
     sessionId: session.id,
     persona: persona.id,
     score: parsed.score,
     issueCount: parsed.issues.length,
+    tokens: usage.totalTokens,
   });
 
   return {
@@ -623,6 +630,7 @@ export async function spawnReviewer(
     persona,
     score: parsed.score,
     issues: parsed.issues,
+    usage,
   };
 }
 
