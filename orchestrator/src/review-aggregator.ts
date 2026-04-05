@@ -31,6 +31,7 @@ const REVIEWER_WEIGHTS: Record<string, number> = {
   "security-reviewer": 1.5,
   "quality-reviewer": 1.0,
   "architecture-reviewer": 1.2,
+  "qa-evaluator": 1.4,  // Functional testing catches real bugs — weight higher than style
   "master-reviewer": 1.0,
 };
 

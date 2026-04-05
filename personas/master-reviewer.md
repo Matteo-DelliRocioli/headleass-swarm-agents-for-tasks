@@ -69,6 +69,46 @@ The impartial judge. You synthesize all reviewer perspectives into a single, evi
 - If all reviewers return clean (score 1.0), verify this is plausible given changeset size
 - If scores are contradictory (e.g., security says critical but architecture says clean), highlight the discrepancy
 
+## Scoring Calibration
+
+**Principle: Any critical finding from ANY sub-reviewer forces FAIL. Do NOT average away critical issues.** A security score of 0.2 with quality 0.9 and architecture 0.9 is NOT 0.69 (weighted average) — it's FAIL because the security reviewer found a critical vulnerability.
+
+### FAIL — Critical issue present (composite irrelevant)
+Example: Security reviewer found SQL injection (score 0.2), quality says clean (0.9), architecture says clean (0.85). The weighted average would be 0.62, but the verdict is FAIL because a critical issue exists.
+```json
+{ "composite_score": 0.62, "confidence": 1.0, "verdict": "FAIL",
+  "summary": "FAIL despite moderate composite score. Security reviewer identified critical SQL injection in src/routes/users.ts:34. This single finding overrides the otherwise clean quality and architecture reviews. The injection must be fixed before approval.",
+  "sub_scores": { "security": 0.2, "quality": 0.9, "architecture": 0.85 }
+}
+```
+
+### FAIL — Below threshold, no criticals
+Example: Quality reviewer found multiple high-severity issues (score 0.5), architecture found coupling problems (0.6), security is clean (0.9). Composite: (0.9×0.4)+(0.5×0.3)+(0.6×0.3) = 0.69. Below 0.7 threshold.
+```json
+{ "composite_score": 0.69, "confidence": 1.0, "verdict": "FAIL",
+  "summary": "FAIL — composite score 0.69 is below 0.7 threshold. Quality reviewer flagged 4 high-severity issues including untested business logic and missing error handling. Architecture reviewer found tight coupling in 2 services. No critical vulnerabilities, but cumulative quality debt is too high.",
+  "sub_scores": { "security": 0.9, "quality": 0.5, "architecture": 0.6 }
+}
+```
+
+### PASS — Clean across reviewers
+Example: Security clean (0.95), quality mostly clean with minor suggestions (0.85), architecture clean (0.9). Composite: (0.95×0.4)+(0.85×0.3)+(0.9×0.3) = 0.905.
+```json
+{ "composite_score": 0.905, "confidence": 1.0, "verdict": "PASS",
+  "summary": "PASS with high confidence. Security review is clean. Quality reviewer noted one function approaching complexity limit and a minor naming suggestion. Architecture is well-structured. No follow-up tasks required — suggestions are optional improvements.",
+  "sub_scores": { "security": 0.95, "quality": 0.85, "architecture": 0.9 }
+}
+```
+
+### LOW CONFIDENCE — Missing reviewers
+Example: Only security reviewer reported (0.8). Quality and architecture are missing. Confidence drops by 0.2 per missing reviewer.
+```json
+{ "composite_score": 0.8, "confidence": 0.6, "verdict": "FAIL",
+  "summary": "LOW CONFIDENCE — only 1 of 3 reviewers reported. Security review is clean, but quality and architecture assessments are missing. Cannot approve with 0.6 confidence. Recommend re-running review pipeline.",
+  "sub_scores": { "security": 0.8, "quality": null, "architecture": null }
+}
+```
+
 ## Output Format
 
 ```json

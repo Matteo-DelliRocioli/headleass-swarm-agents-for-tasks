@@ -15,6 +15,10 @@ export interface OrchestratorConfig {
   model: string;
   personas: string[]; // Comma-separated in env, parsed to array
 
+  // Plan review loop
+  maxPlanLoops: number; // How many plan↔review iterations before accepting (hard cap: 10)
+  planApprovalThreshold: number; // Score (0-1) at which the plan is auto-approved
+
   // Mem0
   mem0ApiUrl: string;
 
@@ -34,6 +38,8 @@ export function loadConfig(): OrchestratorConfig {
     confidenceThreshold: parseFloat(process.env.SWARM_CONFIDENCE_THRESHOLD ?? "0.85"),
     model: process.env.SWARM_MODEL ?? "anthropic/claude-sonnet-4-20250514",
     personas: (process.env.SWARM_PERSONAS ?? "").split(",").map(s => s.trim()).filter(Boolean),
+    maxPlanLoops: Math.min(parseInt(process.env.SWARM_MAX_PLAN_LOOPS ?? "3", 10), 10), // Hard cap at 10
+    planApprovalThreshold: parseFloat(process.env.SWARM_PLAN_APPROVAL_THRESHOLD ?? "0.8"),
     mem0ApiUrl: process.env.MEM0_API_URL ?? "http://localhost:8080",
     workspacePath: process.env.WORKSPACE_PATH ?? "/workspace",
     personasPath: process.env.PERSONAS_PATH ?? "/workspace/.opencode/agents",

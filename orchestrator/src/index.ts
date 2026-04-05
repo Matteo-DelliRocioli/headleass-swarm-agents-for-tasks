@@ -8,8 +8,9 @@ import { loadConfig } from "./config.js";
 import { logger } from "./logger.js";
 import * as beads from "./beads.js";
 import { loadPersonas, matchPersonaToTask } from "./persona-loader.js";
-import { spawnAgent, spawnReviewer } from "./agent-spawner.js";
+import { spawnAgent, spawnReviewer, spawnPlanner, reviewPlan, revisePlan, type PlannerOutput } from "./agent-spawner.js";
 import { aggregateReviews, type ReviewResult } from "./review-aggregator.js";
+import { addMemory, type Mem0Config } from "./mem0.js";
 
 // ---------------------------------------------------------------------------
 // Termination signal — writes result to /dev/termination-log + result.json
@@ -109,15 +110,129 @@ async function main(): Promise<void> {
   );
   logger.info("Created epic", { epicId });
 
-  // Use the plan-mode agent to decompose the prompt into subtasks
-  // For now, we create a single task from the prompt. A more sophisticated
-  // version would use an OpenCode Plan agent to generate subtasks.
-  const taskId = await beads.createTask(config.initialPrompt.slice(0, 80), epicId, {
-    priority: 1,
-    description: config.initialPrompt,
-  });
-  totalTasks++;
-  logger.info("Created initial task", { taskId });
+  // Spawn the planner agent and iterate with review until approved
+  const plannerPersona = personas.get("planner-agent");
+  const masterReviewer = personas.get("master-reviewer");
+
+  if (!plannerPersona) {
+    logger.warn("Planner persona not found — falling back to single task");
+    const taskId = await beads.createTask(config.initialPrompt.slice(0, 80), epicId, {
+      priority: 1,
+      description: config.initialPrompt,
+    });
+    totalTasks++;
+    logger.info("Created single task (no planner)", { taskId });
+  } else {
+    // --- Plan↔Review iteration loop ---
+    const planSession = await spawnPlanner(plannerPersona, config.initialPrompt, config);
+    let currentPlan: PlannerOutput = planSession.plan;
+    let planApproved = false;
+
+    if (currentPlan.tasks.length > 0 && masterReviewer) {
+      for (let planLoop = 1; planLoop <= config.maxPlanLoops; planLoop++) {
+        logger.info(`Plan review iteration ${planLoop}/${config.maxPlanLoops}`, {
+          taskCount: currentPlan.tasks.length,
+          summary: currentPlan.summary,
+        });
+
+        const review = await reviewPlan(currentPlan, masterReviewer, config);
+
+        if (review.approved || review.score >= config.planApprovalThreshold) {
+          logger.info("Plan approved", { score: review.score, iteration: planLoop });
+          planApproved = true;
+          break;
+        }
+
+        if (planLoop >= config.maxPlanLoops) {
+          logger.warn("Plan review max loops reached — accepting best effort", {
+            score: review.score,
+            loops: planLoop,
+          });
+          break;
+        }
+
+        // Send feedback to planner for revision (same session — retains context)
+        logger.info("Plan rejected, requesting revision", {
+          score: review.score,
+          issueCount: review.issues.length,
+          feedback: review.feedback.slice(0, 200),
+        });
+
+        currentPlan = await revisePlan(
+          planSession.sessionId,
+          review,
+          planLoop,
+          config,
+        );
+
+        if (currentPlan.tasks.length === 0) {
+          logger.warn("Planner returned empty revision — stopping iteration");
+          break;
+        }
+      }
+    } else if (currentPlan.tasks.length > 0) {
+      // No master-reviewer persona available — skip plan review
+      logger.warn("Master-reviewer not found — skipping plan review, using initial plan");
+      planApproved = true;
+    }
+
+    if (!planApproved && currentPlan.tasks.length > 0) {
+      logger.info("Proceeding with best available plan (not explicitly approved)", {
+        taskCount: currentPlan.tasks.length,
+      });
+    }
+
+    // --- Materialize the final plan into beads tasks ---
+    if (currentPlan.tasks.length === 0) {
+      logger.warn("Plan has no tasks — creating single fallback task");
+      const taskId = await beads.createTask(config.initialPrompt.slice(0, 80), epicId, {
+        priority: 1,
+        description: config.initialPrompt,
+      });
+      totalTasks++;
+      logger.info("Created fallback task", { taskId });
+    } else {
+      // Create all tasks first, build title→ID map
+      const titleToId = new Map<string, string>();
+      for (const planned of currentPlan.tasks) {
+        const taskId = await beads.createTask(planned.title.slice(0, 80), epicId, {
+          priority: planned.priority,
+          description: planned.description,
+        });
+        titleToId.set(planned.title, taskId);
+        totalTasks++;
+        logger.info("Created planned task", {
+          taskId,
+          title: planned.title,
+          persona: planned.suggested_persona,
+          priority: planned.priority,
+        });
+      }
+
+      // Wire up dependencies (second pass)
+      for (const planned of currentPlan.tasks) {
+        if (!planned.depends_on?.length) continue;
+        const childId = titleToId.get(planned.title);
+        if (!childId) continue;
+
+        for (const depTitle of planned.depends_on) {
+          const parentId = titleToId.get(depTitle);
+          if (parentId) {
+            await beads.addDependency(childId, parentId);
+            logger.info("Added dependency", { child: planned.title, parent: depTitle });
+          } else {
+            logger.warn("Dependency target not found", { child: planned.title, missingDep: depTitle });
+          }
+        }
+      }
+
+      logger.info("Plan materialized into tasks", {
+        totalTasks: currentPlan.tasks.length,
+        withDependencies: currentPlan.tasks.filter(t => t.depends_on?.length).length,
+        planApproved,
+      });
+    }
+  }
 
   // =====================================================================
   // MAIN LOOP
@@ -180,19 +295,17 @@ async function main(): Promise<void> {
     // -------------------------------------------------------------------
     logger.info("Phase 3: Parallel review");
 
-    const reviewPersonas = [...personas.values()].filter(p => p.isReviewer && p.id !== "master-reviewer");
+    const reviewPersonas = [...personas.values()].filter(p => p.isReviewer && p.id !== "master-reviewer" && p.id !== "planner-agent");
     const reviewResults: ReviewResult[] = [];
 
-    // Spawn all review agents in parallel
+    // Spawn all review agents in parallel — each returns structured score + issues
     const reviewPromises = reviewPersonas.map(async (persona) => {
       try {
-        const result = await spawnReviewer(persona, currentLoop, config);
-        // TODO: Read structured output from the review session
-        // For now, return a placeholder
+        const output = await spawnReviewer(persona, currentLoop, config);
         return {
           reviewerId: persona.id,
-          score: 0.85, // Placeholder — real score from session output
-          issues: [],
+          score: output.score,
+          issues: output.issues,
         } as ReviewResult;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -227,6 +340,18 @@ async function main(): Promise<void> {
       followUpTasks: aggregated.followUpTasks.length,
       durationMs: loopDuration,
     });
+
+    // Store loop observation in Mem0 for next iteration's agents
+    const mem0Config: Mem0Config = { apiUrl: config.mem0ApiUrl, runName: config.runName };
+    const criticalSummary = aggregated.criticalIssues.length > 0
+      ? ` Critical issues: ${aggregated.criticalIssues.map(i => i.description.slice(0, 60)).join("; ")}`
+      : "";
+    await addMemory(
+      `Loop ${currentLoop} completed. Confidence: ${aggregated.confidence}. Follow-ups: ${aggregated.followUpTasks.length}.${criticalSummary}`,
+      "orchestrator",
+      mem0Config,
+      "loop-summary",
+    );
 
     // Check termination conditions
     if (aggregated.confidence >= config.confidenceThreshold) {
