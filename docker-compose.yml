@@ -1,8 +1,6 @@
 services:
   opencode:
-    build:
-      context: .
-      dockerfile: operator/images/opencode/Dockerfile
+    image: swarm-opencode:latest
     volumes:
       - workspace:/workspace
       - ./opencode-config:/root/.config/opencode:ro
@@ -12,6 +10,7 @@ services:
     environment:
       - OPENCODE_HOST=0.0.0.0
       - OPENCODE_PORT=4096
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:4096/health || exit 1"]
       interval: 5s
@@ -20,9 +19,7 @@ services:
       start_period: 10s
 
   beads:
-    build:
-      context: .
-      dockerfile: operator/images/beads/Dockerfile
+    image: swarm-beads:latest
     volumes:
       - workspace:/workspace
       - beads-data:/root/.beads
@@ -36,9 +33,7 @@ services:
       - "6334:6334"
 
   mem0:
-    build:
-      context: .
-      dockerfile: operator/images/mem0/Dockerfile
+    image: swarm-mem0:latest
     environment:
       - QDRANT_URL=http://qdrant:6333
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
@@ -50,9 +45,7 @@ services:
       - qdrant
 
   orchestrator:
-    build:
-      context: .
-      dockerfile: operator/images/orchestrator/Dockerfile
+    image: swarm-orchestrator:latest
     volumes:
       - workspace:/workspace
       - ./personas:/workspace/.opencode/agents:ro
@@ -61,7 +54,7 @@ services:
       - OPENCODE_PORT=4096
       - SWARM_INITIAL_PROMPT=${SWARM_INITIAL_PROMPT:-Build a hello world Express app}
       - SWARM_RUN_NAME=${SWARM_RUN_NAME:-local-run}
-      - SWARM_MAX_LOOPS=${SWARM_MAX_LOOPS:-3}
+      - SWARM_MAX_LOOPS=${SWARM_MAX_LOOPS:-1}
       - SWARM_CONFIDENCE_THRESHOLD=${SWARM_CONFIDENCE_THRESHOLD:-0.85}
       - SWARM_MODEL=${SWARM_MODEL:-anthropic/claude-sonnet-4-20250514}
       - SWARM_PERSONAS=${SWARM_PERSONAS:-}
@@ -79,9 +72,7 @@ services:
         condition: service_started
 
   dashboard:
-    build:
-      context: .
-      dockerfile: dashboard/Dockerfile
+    image: swarm-dashboard:latest
     ports:
       - "3000:3000"
     environment:
@@ -92,5 +83,4 @@ services:
 volumes:
   workspace:
   beads-data:
-  mem0-data:
   qdrant-data:

@@ -1,0 +1,11 @@
+node_modules/
+.git/
+.beads/
+.dolt/
+openclaw/
+.claude/
+dist/
+*.log
+.env
+.env.local
+.DS_Store

@@ -1,9 +1,7 @@
-FROM golang:1.22-bookworm AS builder
-RUN go install github.com/steveyegge/beads/cmd/bd@latest
-
-FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y ca-certificates curl && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /go/bin/bd /usr/local/bin/bd
+FROM node:22-slim
+RUN apt-get update && apt-get install -y ca-certificates curl git && rm -rf /var/lib/apt/lists/*
+# Install beads via npm (Go build requires Go 1.25.8+, not yet in Docker Hub)
+RUN npm install -g @beads/bd
 WORKDIR /workspace
 # Init beads on first run if not already initialized
 CMD ["sh", "-c", "cd /workspace && (test -d .beads || bd init --stealth) && bd daemon start --local"]
