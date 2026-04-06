@@ -3,8 +3,8 @@
 // ---------------------------------------------------------------------------
 
 import * as k8s from "@kubernetes/client-node";
-import type { Config } from "./config";
-import { BeadsQueue } from "./beads-queue";
+import type { Config } from "./config.js";
+import { BeadsQueue } from "./beads-queue.js";
 
 export interface ActiveCounts {
   pods: number;

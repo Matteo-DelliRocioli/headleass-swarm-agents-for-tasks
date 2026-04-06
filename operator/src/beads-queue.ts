@@ -4,8 +4,8 @@
 
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { logger } from "./logger";
-import { withRetry } from "./errors";
+import { logger } from "./logger.js";
+import { withRetry } from "./errors.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -62,7 +62,9 @@ export class BeadsQueue {
         try {
           const output = await runBd(["update", issueId, "--claim", "--json"]);
           const parsed = JSON.parse(output);
-          const claimed = parsed.claimed ?? parsed.status === "in_progress";
+          // bd returns either an object or an array — normalize
+          const item = Array.isArray(parsed) ? parsed[0] : parsed;
+          const claimed = item?.claimed ?? item?.status === "in_progress";
           this.log.info("Claimed Beads issue", { issueId, claimed });
           return Boolean(claimed);
         } catch (err) {

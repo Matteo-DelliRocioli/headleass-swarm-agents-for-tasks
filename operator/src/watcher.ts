@@ -3,10 +3,10 @@
 // ---------------------------------------------------------------------------
 
 import * as k8s from "@kubernetes/client-node";
-import type { Config } from "./config";
-import type { SwarmRun } from "./types";
-import { Reconciler } from "./reconciler";
-import { logger } from "./logger";
+import type { Config } from "./config.js";
+import type { SwarmRun } from "./types.js";
+import { Reconciler } from "./reconciler.js";
+import { logger } from "./logger.js";
 
 const CRD_GROUP = "swarm.agentswarm.io";
 const CRD_VERSION = "v1alpha1";

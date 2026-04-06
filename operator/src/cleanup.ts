@@ -3,9 +3,9 @@
 // ---------------------------------------------------------------------------
 
 import * as k8s from "@kubernetes/client-node";
-import type { Config } from "./config";
-import type { SwarmRun } from "./types";
-import { logger } from "./logger";
+import type { Config } from "./config.js";
+import type { SwarmRun } from "./types.js";
+import { logger } from "./logger.js";
 
 export class CleanupManager {
   constructor(

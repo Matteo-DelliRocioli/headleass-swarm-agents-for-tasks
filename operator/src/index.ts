@@ -3,14 +3,14 @@
 // ---------------------------------------------------------------------------
 
 import * as k8s from "@kubernetes/client-node";
-import { config } from "./config";
-import { logger } from "./logger";
-import { BeadsQueue } from "./beads-queue";
-import { ConcurrencyController } from "./concurrency";
-import { StatusUpdater } from "./status";
-import { Reconciler } from "./reconciler";
-import { CleanupManager } from "./cleanup";
-import { SwarmWatcher } from "./watcher";
+import { config } from "./config.js";
+import { logger } from "./logger.js";
+import { BeadsQueue } from "./beads-queue.js";
+import { ConcurrencyController } from "./concurrency.js";
+import { StatusUpdater } from "./status.js";
+import { Reconciler } from "./reconciler.js";
+import { CleanupManager } from "./cleanup.js";
+import { SwarmWatcher } from "./watcher.js";
 
 async function main(): Promise<void> {
   logger.info("SwarmRun Operator starting", {

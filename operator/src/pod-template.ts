@@ -3,8 +3,8 @@
 // ---------------------------------------------------------------------------
 
 import * as k8s from "@kubernetes/client-node";
-import type { SwarmRun } from "./types";
-import type { Config } from "./config";
+import type { SwarmRun } from "./types.js";
+import type { Config } from "./config.js";
 
 const CRD_GROUP = "swarm.agentswarm.io";
 const CRD_VERSION = "v1alpha1";

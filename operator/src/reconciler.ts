@@ -3,15 +3,15 @@
 // ---------------------------------------------------------------------------
 
 import * as k8s from "@kubernetes/client-node";
-import type { Config } from "./config";
-import type { SwarmRun, SwarmRunResults } from "./types";
-import { SwarmRunResultsSchema } from "./types";
-import { BeadsQueue } from "./beads-queue";
-import { ConcurrencyController } from "./concurrency";
-import { StatusUpdater } from "./status";
-import { buildSwarmPod } from "./pod-template";
-import { classifyError } from "./errors";
-import { logger } from "./logger";
+import type { Config } from "./config.js";
+import type { SwarmRun, SwarmRunResults } from "./types.js";
+import { SwarmRunResultsSchema } from "./types.js";
+import { BeadsQueue } from "./beads-queue.js";
+import { ConcurrencyController } from "./concurrency.js";
+import { StatusUpdater } from "./status.js";
+import { buildSwarmPod } from "./pod-template.js";
+import { classifyError } from "./errors.js";
+import { logger } from "./logger.js";
 
 const CRD_GROUP = "swarm.agentswarm.io";
 const CRD_VERSION = "v1alpha1";
@@ -31,6 +31,9 @@ export class Reconciler {
 
   // In-flight guards to prevent duplicate processing from rapid event delivery
   private readonly inflight = new Set<string>();
+
+  // Serializes drainQueue so that tryAcquireSlot + createPod is atomic
+  private drainMutex: Promise<void> = Promise.resolve();
 
   // -----------------------------------------------------------------------
   // Main reconcile loop
@@ -99,6 +102,20 @@ export class Reconciler {
   // -----------------------------------------------------------------------
 
   async drainQueue(): Promise<void> {
+    // Chain onto the mutex so only one drain runs at a time
+    const prev = this.drainMutex;
+    let release!: () => void;
+    this.drainMutex = new Promise<void>((resolve) => { release = resolve; });
+    await prev;
+
+    try {
+      await this._drainQueue();
+    } finally {
+      release();
+    }
+  }
+
+  private async _drainQueue(): Promise<void> {
     try {
       const response = await this.k8sCustom.listNamespacedCustomObject({
         group: CRD_GROUP,
@@ -118,7 +135,7 @@ export class Reconciler {
           this.log.info("No concurrency slots available, stopping queue drain");
           break;
         }
-        await this.handleQueued(
+        await this._startQueued(
           sr,
           sr.metadata.name,
           sr.metadata.namespace ?? this.config.namespace,
@@ -196,12 +213,30 @@ export class Reconciler {
     name: string,
     namespace: string,
   ): Promise<void> {
-    const hasSlot = await this.concurrency.tryAcquireSlot();
-    if (!hasSlot) {
-      this.log.debug("No slot available for queued run", { name });
-      return;
-    }
+    // Route through the drain mutex so slot acquisition is serialized
+    const prev = this.drainMutex;
+    let release!: () => void;
+    this.drainMutex = new Promise<void>((resolve) => { release = resolve; });
+    await prev;
 
+    try {
+      const hasSlot = await this.concurrency.tryAcquireSlot();
+      if (!hasSlot) {
+        this.log.debug("No slot available for queued run", { name });
+        return;
+      }
+      await this._startQueued(swarmRun, name, namespace);
+    } finally {
+      release();
+    }
+  }
+
+  /** Create the pod and update status. Caller must hold drainMutex. */
+  private async _startQueued(
+    swarmRun: SwarmRun,
+    name: string,
+    namespace: string,
+  ): Promise<void> {
     this.log.info("Slot available, claiming and starting run", { name });
 
     // Claim the Beads issue
