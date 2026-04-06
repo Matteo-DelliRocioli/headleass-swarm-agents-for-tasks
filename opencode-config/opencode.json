@@ -1,0 +1,112 @@
+{
+  "$schema": "https://opencode.ai/schema/config.json",
+  "agents": {
+    "planner-agent": {
+      "description": "Task planner -- decomposes high-level prompts into structured, assignable subtasks",
+      "mode": "subagent",
+      "model": "anthropic/claude-sonnet-4-20250514",
+      "temperature": 0.3,
+      "tools": {
+        "write": false,
+        "edit": false,
+        "bash": "deny"
+      }
+    },
+    "frontend-dev": {
+      "description": "Frontend development specialist -- React, TypeScript, CSS, UI/UX",
+      "mode": "subagent",
+      "model": "anthropic/claude-sonnet-4-20250514",
+      "temperature": 0.4,
+      "tools": {}
+    },
+    "backend-dev": {
+      "description": "Backend development specialist -- APIs, databases, server-side logic",
+      "mode": "subagent",
+      "model": "anthropic/claude-sonnet-4-20250514",
+      "temperature": 0.4,
+      "tools": {}
+    },
+    "database-specialist": {
+      "description": "Database specialist -- schema design, migrations, query optimization",
+      "mode": "subagent",
+      "model": "anthropic/claude-sonnet-4-20250514",
+      "temperature": 0.2,
+      "tools": {}
+    },
+    "test-writer": {
+      "description": "Test specialist -- unit, integration, and e2e test writer",
+      "mode": "subagent",
+      "model": "anthropic/claude-sonnet-4-20250514",
+      "temperature": 0.3,
+      "tools": {}
+    },
+    "devops-agent": {
+      "description": "DevOps pipeline architect -- CI/CD, Docker, K8s, GitHub Actions",
+      "mode": "subagent",
+      "model": "anthropic/claude-sonnet-4-20250514",
+      "temperature": 0.3,
+      "tools": {}
+    },
+    "security-reviewer": {
+      "description": "Security review agent -- OWASP Top 10, auth, injection, secrets exposure",
+      "mode": "subagent",
+      "model": "anthropic/claude-sonnet-4-20250514",
+      "temperature": 0.1,
+      "tools": {
+        "write": false,
+        "edit": false,
+        "bash": "deny"
+      }
+    },
+    "quality-reviewer": {
+      "description": "Code quality review agent -- smells, maintainability, test coverage",
+      "mode": "subagent",
+      "model": "anthropic/claude-sonnet-4-20250514",
+      "temperature": 0.1,
+      "tools": {
+        "write": false,
+        "edit": false,
+        "bash": "deny"
+      }
+    },
+    "architecture-reviewer": {
+      "description": "Architecture review agent -- separation of concerns, dependencies, scalability",
+      "mode": "subagent",
+      "model": "anthropic/claude-sonnet-4-20250514",
+      "temperature": 0.1,
+      "tools": {
+        "write": false,
+        "edit": false,
+        "bash": "deny"
+      }
+    },
+    "qa-evaluator": {
+      "description": "QA Evaluator -- functional testing via Playwright MCP, catches 'compiles but doesn't work' bugs",
+      "mode": "subagent",
+      "model": "anthropic/claude-sonnet-4-20250514",
+      "temperature": 0.2,
+      "tools": {
+        "write": false,
+        "edit": false,
+        "bash": true
+      }
+    },
+    "master-reviewer": {
+      "description": "Master reviewer -- aggregates scores, calculates confidence, creates follow-up tasks",
+      "mode": "subagent",
+      "model": "anthropic/claude-sonnet-4-20250514",
+      "temperature": 0.1,
+      "tools": {
+        "write": false,
+        "edit": false,
+        "bash": "deny"
+      }
+    }
+  },
+  "tools": {
+    "directory": "./tools"
+  },
+  "plugins": {
+    "directory": "./plugins"
+  }
+}
