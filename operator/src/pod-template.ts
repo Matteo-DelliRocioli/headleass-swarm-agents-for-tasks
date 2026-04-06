@@ -60,9 +60,7 @@ export function buildSwarmPod(swarmRun: SwarmRun, config: Config): k8s.V1Pod {
       volumes: [
         {
           name: "workspace",
-          emptyDir: {
-            sizeLimit: "10Gi",
-          },
+          persistentVolumeClaim: { claimName: "swarm-workspaces" },
         },
       ],
       containers: [
@@ -81,7 +79,7 @@ export function buildSwarmPod(swarmRun: SwarmRun, config: Config): k8s.V1Pod {
           },
           resources: resources("opencode"),
           volumeMounts: [
-            { name: "workspace", mountPath: "/workspace" },
+            { name: "workspace", mountPath: "/workspace", subPath: name },
           ],
         },
         // 2. beads
@@ -98,7 +96,7 @@ export function buildSwarmPod(swarmRun: SwarmRun, config: Config): k8s.V1Pod {
           },
           resources: resources("beads"),
           volumeMounts: [
-            { name: "workspace", mountPath: "/workspace" },
+            { name: "workspace", mountPath: "/workspace", subPath: name },
           ],
         },
         // 3. orchestrator
@@ -126,7 +124,7 @@ export function buildSwarmPod(swarmRun: SwarmRun, config: Config): k8s.V1Pod {
           ],
           resources: resources("orchestrator"),
           volumeMounts: [
-            { name: "workspace", mountPath: "/workspace" },
+            { name: "workspace", mountPath: "/workspace", subPath: name },
           ],
           terminationMessagePath: "/dev/termination-log",
           terminationMessagePolicy: "File",
@@ -138,7 +136,7 @@ export function buildSwarmPod(swarmRun: SwarmRun, config: Config): k8s.V1Pod {
           command: ["sleep", "infinity"],
           resources: resources("playwright"),
           volumeMounts: [
-            { name: "workspace", mountPath: "/workspace" },
+            { name: "workspace", mountPath: "/workspace", subPath: name },
           ],
         },
       ],

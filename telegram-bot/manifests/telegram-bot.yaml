@@ -83,6 +83,9 @@ spec:
               value: "10"
             - name: DASHBOARD_URL
               value: "http://swarm-dashboard"
+          volumeMounts:
+            - name: swarm-workspaces
+              mountPath: /swarm-workspaces
           resources:
             requests:
               memory: "64Mi"
@@ -90,3 +93,7 @@ spec:
             limits:
               memory: "128Mi"
               cpu: "0.1"
+      volumes:
+        - name: swarm-workspaces
+          persistentVolumeClaim:
+            claimName: swarm-workspaces

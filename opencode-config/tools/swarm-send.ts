@@ -1,6 +1,5 @@
 import { tool } from "@opencode-ai/plugin";
 import { writeFile, mkdir } from "fs/promises";
-import { existsSync } from "fs";
 import { randomUUID } from "crypto";
 
 const MESSAGES_DIR = process.env.SWARM_STATE_PATH
@@ -9,7 +8,7 @@ const MESSAGES_DIR = process.env.SWARM_STATE_PATH
 
 export default tool({
   description:
-    "Send a message to another agent in the swarm. Messages are stored as JSONL and can be read by the target agent using swarm-receive.",
+    "Send a message to another agent in the swarm. Messages are stored as individual JSON files and can be read by the target agent using swarm-receive.",
   args: {
     from: {
       type: "string",
@@ -33,12 +32,12 @@ export default tool({
     const priority = args.priority === "urgent" ? "urgent" : "normal";
 
     try {
-      if (!existsSync(MESSAGES_DIR)) {
-        await mkdir(MESSAGES_DIR, { recursive: true });
-      }
+      const pendingDir = `${MESSAGES_DIR}/${args.to}/pending`;
+      await mkdir(pendingDir, { recursive: true });
 
+      const id = randomUUID();
       const entry = {
-        id: randomUUID(),
+        id,
         from: args.from,
         to: args.to,
         message: args.message,
@@ -47,8 +46,8 @@ export default tool({
         timestamp: new Date().toISOString(),
       };
 
-      const filePath = `${MESSAGES_DIR}/${args.to}.jsonl`;
-      await writeFile(filePath, JSON.stringify(entry) + "\n", { flag: "a" });
+      const filePath = `${pendingDir}/${id}.json`;
+      await writeFile(filePath, JSON.stringify(entry, null, 2));
 
       return {
         success: true,

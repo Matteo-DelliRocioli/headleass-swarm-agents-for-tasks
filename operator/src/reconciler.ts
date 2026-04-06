@@ -427,33 +427,56 @@ export class Reconciler {
     namespace: string,
     terminated: k8s.V1ContainerStateTerminated,
   ): Promise<void> {
+    const restartCount = swarmRun.status?.restartCount ?? 0;
+    const maxRestarts = swarmRun.spec.maxRestarts ?? 2;
+
     this.log.error("Orchestrator failed", {
       name,
       exitCode: terminated.exitCode,
       reason: terminated.reason,
+      restartCount,
+      maxRestarts,
     });
 
-    // Close Beads issue
-    if (swarmRun.status?.beadsIssueId) {
-      await this.beadsQueue.closeIssue(
-        swarmRun.status.beadsIssueId,
-        `Failed: exit code ${terminated.exitCode}`,
-      );
-    }
-
-    // Update status
-    await this.statusUpdater.updatePhase(name, namespace, "Failed", {
-      completionTime: new Date().toISOString(),
-      message: `Orchestrator exited with code ${terminated.exitCode}: ${terminated.reason ?? "unknown"}`,
-    });
-
-    // Delete the pod
+    // Delete the pod (needed for both restart and final failure)
     const podName = swarmRun.status?.podName ?? `swarm-run-${name}`;
     try {
       await this.k8sCore.deleteNamespacedPod({ name: podName, namespace });
     } catch {
       // Best effort
     }
+
+    // If we haven't exhausted restarts, increment counter and let the next
+    // reconcile cycle recreate the pod. The PVC workspace persists so the
+    // orchestrator will load its checkpoint.
+    if (restartCount < maxRestarts) {
+      this.log.info("Restarting orchestrator (PVC workspace persists)", {
+        name,
+        restartCount: restartCount + 1,
+        maxRestarts,
+      });
+
+      await this.statusUpdater.updatePhase(name, namespace, "Queued", {
+        restartCount: restartCount + 1,
+        message: `Restarting after exit code ${terminated.exitCode} (attempt ${restartCount + 1}/${maxRestarts})`,
+      });
+
+      await this.drainQueue();
+      return;
+    }
+
+    // Exhausted restarts — mark as Failed
+    if (swarmRun.status?.beadsIssueId) {
+      await this.beadsQueue.closeIssue(
+        swarmRun.status.beadsIssueId,
+        `Failed: exit code ${terminated.exitCode} after ${maxRestarts} restart(s)`,
+      );
+    }
+
+    await this.statusUpdater.updatePhase(name, namespace, "Failed", {
+      completionTime: new Date().toISOString(),
+      message: `Orchestrator exited with code ${terminated.exitCode}: ${terminated.reason ?? "unknown"} (exhausted ${maxRestarts} restart(s))`,
+    });
 
     await this.drainQueue();
   }

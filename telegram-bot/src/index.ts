@@ -3,6 +3,9 @@
 // ---------------------------------------------------------------------------
 
 import { Bot } from "grammy";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { execSync } from "node:child_process";
 import { K8sClient, type SwarmRunSummary } from "./k8s.js";
 import { StuckDetector } from "./stuck-detector.js";
 
@@ -15,6 +18,7 @@ const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const NAMESPACE = process.env.NAMESPACE ?? "default";
 const STUCK_MINUTES = parseInt(process.env.STUCK_THRESHOLD_MINUTES ?? "10", 10);
 const DASHBOARD_URL = process.env.DASHBOARD_URL ?? "http://localhost:3000";
+const WORKSPACES_PATH = process.env.WORKSPACES_PATH ?? "/swarm-workspaces";
 
 if (!BOT_TOKEN) {
   console.error("TELEGRAM_BOT_TOKEN is required");
@@ -92,6 +96,9 @@ bot.command("start", (ctx) => {
     "/status — list all runs\n" +
     "/status <name> — detailed run info\n" +
     "/cancel <name> — cancel a run\n" +
+    "/workspaces — list PVC workspaces\n" +
+    "/workspace <name> — workspace details\n" +
+    "/cleanup <name> — delete a workspace\n" +
     "/link — dashboard URL",
   );
 });
@@ -167,6 +174,178 @@ bot.command("cancel", async (ctx) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     await ctx.reply(`❌ Failed to cancel: ${msg}`);
+  }
+});
+
+bot.command("workspaces", async (ctx) => {
+  try {
+    if (!fs.existsSync(WORKSPACES_PATH)) {
+      await ctx.reply("Workspaces directory not found.");
+      return;
+    }
+
+    const entries = fs.readdirSync(WORKSPACES_PATH, { withFileTypes: true })
+      .filter((d) => d.isDirectory());
+
+    if (entries.length === 0) {
+      await ctx.reply("No workspaces found.");
+      return;
+    }
+
+    const lines: string[] = [];
+    for (const entry of entries) {
+      const wsPath = path.join(WORKSPACES_PATH, entry.name);
+      const resultPath = path.join(wsPath, ".swarm", "result.json");
+      const hasResult = fs.existsSync(resultPath);
+      const status = hasResult ? "completed" : "in-progress";
+
+      // Estimate size (count files, not recursive byte sum for speed)
+      let sizeEstimate = "unknown";
+      try {
+        const output = execSync(`du -sh "${wsPath}" 2>/dev/null`, { encoding: "utf-8" });
+        sizeEstimate = output.split("\t")[0].trim();
+      } catch {
+        // Best effort
+      }
+
+      const icon = hasResult ? "done" : "wip";
+      lines.push(`[${icon}] ${entry.name} | ${status} | ${sizeEstimate}`);
+    }
+
+    await ctx.reply(`Workspaces (${entries.length}):\n\`\`\`\n${lines.join("\n")}\n\`\`\``, { parse_mode: "Markdown" });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await ctx.reply(`Failed to list workspaces: ${msg}`);
+  }
+});
+
+bot.command("workspace", async (ctx) => {
+  const name = ctx.match?.trim();
+  if (!name) {
+    await ctx.reply("Usage: /workspace <name>");
+    return;
+  }
+
+  // Validate name to prevent directory traversal
+  if (name.includes("..") || name.includes("/")) {
+    await ctx.reply("Invalid workspace name.");
+    return;
+  }
+
+  const wsPath = path.join(WORKSPACES_PATH, name);
+  if (!fs.existsSync(wsPath)) {
+    await ctx.reply(`Workspace \`${name}\` not found.`, { parse_mode: "Markdown" });
+    return;
+  }
+
+  const parts: string[] = [`Workspace: *${name}*`];
+
+  // Check result.json
+  const resultPath = path.join(wsPath, ".swarm", "result.json");
+  if (fs.existsSync(resultPath)) {
+    try {
+      const result = JSON.parse(fs.readFileSync(resultPath, "utf-8"));
+      parts.push(`Status: ${result.status ?? "unknown"}`);
+      if (result.confidence !== undefined) parts.push(`Confidence: ${(result.confidence * 100).toFixed(0)}%`);
+      if (result.loopsExecuted !== undefined) parts.push(`Loops: ${result.loopsExecuted}/${result.maxLoops ?? "?"}`);
+    } catch {
+      parts.push("Result: (parse error)");
+    }
+  } else {
+    parts.push("Result: not yet available");
+  }
+
+  // Check checkpoint.json
+  const checkpointPath = path.join(wsPath, ".swarm", "checkpoint.json");
+  if (fs.existsSync(checkpointPath)) {
+    try {
+      const checkpoint = JSON.parse(fs.readFileSync(checkpointPath, "utf-8"));
+      parts.push(`\nCheckpoint:`);
+      if (checkpoint.currentLoop !== undefined) parts.push(`  Loop: ${checkpoint.currentLoop}`);
+      if (checkpoint.phase) parts.push(`  Phase: ${checkpoint.phase}`);
+      if (checkpoint.confidence !== undefined) parts.push(`  Confidence: ${(checkpoint.confidence * 100).toFixed(0)}%`);
+    } catch {
+      parts.push("Checkpoint: (parse error)");
+    }
+  }
+
+  // Git log
+  try {
+    const gitLog = execSync(`git -C "${wsPath}" log --oneline -5 2>/dev/null`, { encoding: "utf-8" }).trim();
+    if (gitLog) {
+      parts.push(`\nRecent commits:\n\`\`\`\n${gitLog}\n\`\`\``);
+    }
+  } catch {
+    // Not a git repo or git not available
+  }
+
+  await ctx.reply(parts.join("\n"), { parse_mode: "Markdown" });
+});
+
+// Track pending cleanup confirmations: chatId -> workspaceName
+const pendingCleanups = new Map<number, string>();
+
+bot.command("cleanup", async (ctx) => {
+  const name = ctx.match?.trim();
+  if (!name) {
+    await ctx.reply("Usage: /cleanup <name>");
+    return;
+  }
+
+  // Validate name to prevent directory traversal
+  if (name.includes("..") || name.includes("/")) {
+    await ctx.reply("Invalid workspace name.");
+    return;
+  }
+
+  const wsPath = path.join(WORKSPACES_PATH, name);
+  if (!fs.existsSync(wsPath)) {
+    await ctx.reply(`Workspace \`${name}\` not found.`, { parse_mode: "Markdown" });
+    return;
+  }
+
+  // Store pending confirmation
+  const chatId = ctx.chat?.id;
+  if (chatId) {
+    pendingCleanups.set(chatId, name);
+    await ctx.reply(
+      `Are you sure you want to delete workspace \`${name}\`?\n` +
+      `This will permanently remove all files.\n\n` +
+      `Reply "yes" to confirm or anything else to cancel.`,
+      { parse_mode: "Markdown" },
+    );
+  }
+});
+
+// Handle cleanup confirmation
+bot.on("message:text", async (ctx, next) => {
+  const chatId = ctx.chat?.id;
+  if (!chatId || !pendingCleanups.has(chatId)) {
+    await next();
+    return;
+  }
+
+  const name = pendingCleanups.get(chatId)!;
+  pendingCleanups.delete(chatId);
+
+  if (ctx.message.text.toLowerCase().trim() !== "yes") {
+    await ctx.reply("Cleanup cancelled.");
+    return;
+  }
+
+  // Re-validate
+  if (name.includes("..") || name.includes("/")) {
+    await ctx.reply("Invalid workspace name.");
+    return;
+  }
+
+  const wsPath = path.join(WORKSPACES_PATH, name);
+  try {
+    fs.rmSync(wsPath, { recursive: true, force: true });
+    await ctx.reply(`Workspace \`${name}\` deleted.`, { parse_mode: "Markdown" });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await ctx.reply(`Failed to delete workspace: ${msg}`);
   }
 });
 

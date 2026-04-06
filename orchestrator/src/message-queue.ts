@@ -2,12 +2,16 @@
 // Message queue — orchestrator-side management of the file-based swarm queue
 // ---------------------------------------------------------------------------
 //
-// Messages are stored as JSONL files at {swarmStatePath}/messages/{agentId}.jsonl
-// Each line is a JSON message with: id, from, to, message, priority, status, timestamp
-// Status transitions: pending → read
+// Messages are stored as individual JSON files at:
+//   {swarmStatePath}/messages/{agentId}/pending/{uuid}.json  — unread
+//   {swarmStatePath}/messages/{agentId}/read/{uuid}.json     — acknowledged
+//
+// Each file contains a JSON message with: id, from, to, message, priority, status, timestamp
+// Status transitions: pending → read (via renameSync for atomicity)
 // ---------------------------------------------------------------------------
 
-import { readdir, readFile, writeFile } from "node:fs/promises";
+import { readdir, readFile, rename, mkdir, rm } from "node:fs/promises";
+import { existsSync, mkdirSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { logger } from "./logger.js";
 
@@ -43,29 +47,47 @@ export async function getQueueStats(swarmStatePath: string): Promise<QueueStats>
   };
 
   try {
-    const files = await readdir(messagesDir);
-    const jsonlFiles = files.filter(f => f.endsWith(".jsonl"));
+    const agentDirs = await readdir(messagesDir);
 
-    for (const file of jsonlFiles) {
-      const agentId = file.replace(".jsonl", "");
-      const content = await readFile(join(messagesDir, file), "utf-8");
-      const messages = parseMessages(content);
-
+    for (const agentId of agentDirs) {
+      const agentPath = join(messagesDir, agentId);
       let pending = 0;
       let read = 0;
-      for (const m of messages) {
-        stats.totalMessages++;
-        if (m.status === "pending") {
+
+      // Count pending messages
+      const pendingDir = join(agentPath, "pending");
+      try {
+        const pendingFiles = (await readdir(pendingDir)).filter(f => f.endsWith(".json"));
+        for (const file of pendingFiles) {
           pending++;
           stats.pendingMessages++;
-          if (m.priority === "urgent") stats.urgentPending++;
-        } else {
-          read++;
-          stats.readMessages++;
+          stats.totalMessages++;
+          try {
+            const content = await readFile(join(pendingDir, file), "utf-8");
+            const msg: QueueMessage = JSON.parse(content);
+            if (msg.priority === "urgent") stats.urgentPending++;
+          } catch {
+            // Skip unreadable files
+          }
         }
+      } catch {
+        // No pending directory
       }
 
-      stats.perAgent[agentId] = { pending, read };
+      // Count read messages
+      const readDir = join(agentPath, "read");
+      try {
+        const readFiles = (await readdir(readDir)).filter(f => f.endsWith(".json"));
+        read = readFiles.length;
+        stats.readMessages += read;
+        stats.totalMessages += read;
+      } catch {
+        // No read directory
+      }
+
+      if (pending > 0 || read > 0) {
+        stats.perAgent[agentId] = { pending, read };
+      }
     }
   } catch {
     // Messages dir doesn't exist yet — empty queue
@@ -81,18 +103,29 @@ export async function getPendingMessages(
   agentId: string,
   swarmStatePath: string,
 ): Promise<QueueMessage[]> {
-  const filePath = join(swarmStatePath, "messages", `${agentId}.jsonl`);
+  const pendingDir = join(swarmStatePath, "messages", agentId, "pending");
 
   try {
-    const content = await readFile(filePath, "utf-8");
-    return parseMessages(content).filter(m => m.status === "pending");
+    const files = (await readdir(pendingDir)).filter(f => f.endsWith(".json"));
+    const messages: QueueMessage[] = [];
+
+    for (const file of files) {
+      try {
+        const content = await readFile(join(pendingDir, file), "utf-8");
+        messages.push(JSON.parse(content));
+      } catch {
+        // Skip malformed files
+      }
+    }
+
+    return messages;
   } catch {
     return [];
   }
 }
 
 /**
- * Drain the queue — mark all pending messages as read.
+ * Drain the queue — move all pending messages to read.
  * Used at end of run or between loops to clear the queue.
  */
 export async function drainQueue(swarmStatePath: string): Promise<number> {
@@ -100,25 +133,28 @@ export async function drainQueue(swarmStatePath: string): Promise<number> {
   let drained = 0;
 
   try {
-    const files = await readdir(messagesDir);
-    const jsonlFiles = files.filter(f => f.endsWith(".jsonl"));
+    const agentDirs = await readdir(messagesDir);
 
-    for (const file of jsonlFiles) {
-      const filePath = join(messagesDir, file);
-      const content = await readFile(filePath, "utf-8");
-      const messages = parseMessages(content);
+    for (const agentId of agentDirs) {
+      const pendingDir = join(messagesDir, agentId, "pending");
+      const readDir = join(messagesDir, agentId, "read");
 
-      let changed = false;
-      for (const m of messages) {
-        if (m.status === "pending") {
-          m.status = "read";
-          changed = true;
-          drained++;
+      try {
+        const files = (await readdir(pendingDir)).filter(f => f.endsWith(".json"));
+        if (files.length === 0) continue;
+
+        mkdirSync(readDir, { recursive: true });
+
+        for (const file of files) {
+          try {
+            renameSync(join(pendingDir, file), join(readDir, file));
+            drained++;
+          } catch {
+            // File may have already been moved
+          }
         }
-      }
-
-      if (changed) {
-        await writeFile(filePath, messages.map(m => JSON.stringify(m)).join("\n") + "\n");
+      } catch {
+        // No pending directory for this agent
       }
     }
   } catch {
@@ -132,17 +168,40 @@ export async function drainQueue(swarmStatePath: string): Promise<number> {
   return drained;
 }
 
-function parseMessages(content: string): QueueMessage[] {
-  return content
-    .trim()
-    .split("\n")
-    .filter(Boolean)
-    .map(line => {
+/**
+ * Compact the queue — delete all files in read/ directories (cleanup old messages).
+ */
+export async function compactQueue(swarmStatePath: string): Promise<number> {
+  const messagesDir = join(swarmStatePath, "messages");
+  let deleted = 0;
+
+  try {
+    const agentDirs = await readdir(messagesDir);
+
+    for (const agentId of agentDirs) {
+      const readDir = join(messagesDir, agentId, "read");
+
       try {
-        return JSON.parse(line) as QueueMessage;
+        const files = (await readdir(readDir)).filter(f => f.endsWith(".json"));
+        for (const file of files) {
+          try {
+            await rm(join(readDir, file));
+            deleted++;
+          } catch {
+            // Skip files that can't be deleted
+          }
+        }
       } catch {
-        return null;
+        // No read directory for this agent
       }
-    })
-    .filter((m): m is QueueMessage => m !== null);
+    }
+  } catch {
+    // Messages dir doesn't exist yet
+  }
+
+  if (deleted > 0) {
+    logger.info("Queue compacted", { messagesDeleted: deleted });
+  }
+
+  return deleted;
 }

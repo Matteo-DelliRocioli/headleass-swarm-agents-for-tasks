@@ -27,6 +27,7 @@ export const SwarmRunSpecSchema = z.object({
   gitBranch: z.string().default("main"),
   timeout: z.string().default("2h"),
   priority: z.number().int().min(0).max(4).default(2),
+  maxRestarts: z.number().int().min(0).default(2).optional(),
 });
 
 export const K8sConditionSchema = z.object({
@@ -76,6 +77,7 @@ export const SwarmRunStatusSchema = z.object({
   startTime: z.string().optional(),
   completionTime: z.string().optional(),
   message: z.string().optional(),
+  restartCount: z.number().int().default(0).optional(),
   conditions: z.array(K8sConditionSchema).optional(),
   results: SwarmRunResultsSchema.optional(),
 });

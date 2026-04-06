@@ -71,6 +71,10 @@ spec:
                   default: 2
                   minimum: 0
                   maximum: 4
+                maxRestarts:
+                  type: integer
+                  default: 2
+                  minimum: 0
             status:
               type: object
               properties:
@@ -92,6 +96,8 @@ spec:
                   format: date-time
                 message:
                   type: string
+                restartCount:
+                  type: integer
   scope: Namespaced
   names:
     plural: swarmruns

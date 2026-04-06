@@ -8,13 +8,37 @@ import { logger } from "./logger.js";
 
 const execFileAsync = promisify(execFile);
 
+// ---------------------------------------------------------------------------
+// Phase F1: Subprocess concurrency limiter
+// Prevents file-descriptor exhaustion when many agents call `bd` in parallel.
+// ---------------------------------------------------------------------------
+const MAX_CONCURRENT_BD = 3;
+let activeBdCalls = 0;
+const waitQueue: Array<() => void> = [];
+
+async function withBdLimit<T>(fn: () => Promise<T>): Promise<T> {
+  while (activeBdCalls >= MAX_CONCURRENT_BD) {
+    await new Promise<void>((resolve) => waitQueue.push(resolve));
+  }
+  activeBdCalls++;
+  try {
+    return await fn();
+  } finally {
+    activeBdCalls--;
+    const next = waitQueue.shift();
+    if (next) next();
+  }
+}
+
 async function bd(args: string[]): Promise<string> {
-  logger.debug("bd command", { args });
-  const { stdout } = await execFileAsync("bd", args, {
-    timeout: 30_000,
-    maxBuffer: 4 * 1024 * 1024,
+  return withBdLimit(async () => {
+    logger.debug("bd command", { args });
+    const { stdout } = await execFileAsync("bd", args, {
+      timeout: 30_000,
+      maxBuffer: 4 * 1024 * 1024,
+    });
+    return stdout.trim();
   });
-  return stdout.trim();
 }
 
 export interface BeadsTask {
@@ -83,6 +107,14 @@ export async function getReadyTasks(): Promise<BeadsTask[]> {
   } catch {
     return [];
   }
+}
+
+export async function listInProgress(): Promise<BeadsTask[]> {
+  return listTasks("in_progress");
+}
+
+export async function unclaimTask(taskId: string): Promise<void> {
+  await bd(["update", taskId, "--status=open"]);
 }
 
 export async function listTasks(status?: string): Promise<BeadsTask[]> {

@@ -34,21 +34,30 @@ function acquireLock(
   agentId: string,
 ): { acquired: boolean; owner?: string } {
   const lockFile = path.join(LOCK_DIR, `${encodePath(filePath)}.lock`)
+  const content = `${agentId}\n${Date.now()}`
   try {
     fs.mkdirSync(LOCK_DIR, { recursive: true })
 
-    if (fs.existsSync(lockFile)) {
-      const content = fs.readFileSync(lockFile, "utf-8")
-      const owner = content.split("\n")[0]
-      if (owner && owner !== agentId) {
-        return { acquired: false, owner }
-      }
-      // Already owned by this agent — reacquire is fine
-    }
-
-    fs.writeFileSync(lockFile, `${agentId}\n${Date.now()}`)
+    // Atomic create — O_CREAT | O_EXCL, fails with EEXIST if file exists
+    fs.writeFileSync(lockFile, content, { flag: "wx" })
     return { acquired: true }
-  } catch (err) {
+  } catch (err: any) {
+    if (err?.code === "EEXIST") {
+      // Lock file already exists — check owner
+      try {
+        const existing = fs.readFileSync(lockFile, "utf-8")
+        const owner = existing.split("\n")[0]
+        if (owner === agentId) {
+          // Reentrant — same agent, just update the timestamp
+          fs.writeFileSync(lockFile, content)
+          return { acquired: true }
+        }
+        return { acquired: false, owner }
+      } catch (readErr) {
+        console.warn(`[swarm-guard] Failed to read lock for ${filePath}:`, readErr)
+        return { acquired: true }
+      }
+    }
     console.warn(`[swarm-guard] Failed to acquire lock for ${filePath}:`, err)
     // Fail open — don't crash, allow the operation
     return { acquired: true }

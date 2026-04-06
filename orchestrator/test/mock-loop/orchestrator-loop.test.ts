@@ -15,6 +15,28 @@ vi.mock("../../src/usage-tracker.js", async (importOriginal) => {
   return { ...actual, UsageAccumulator: actual.UsageAccumulator };
 });
 
+vi.mock("../../src/checkpoint.js", () => ({
+  createCheckpoint: vi.fn().mockImplementation((runName: string) => ({
+    version: 1,
+    runName,
+    epicId: "",
+    planCompleted: false,
+    taskPersonaMap: {},
+    currentLoop: 0,
+    totalTasks: 0,
+    completedTasks: 0,
+    completedTaskIds: [],
+    failedTaskIds: [],
+    usage: {},
+    errors: [],
+    loopDurations: [],
+    lastCommitSha: "",
+    lastUpdatedAt: new Date().toISOString(),
+  })),
+  loadCheckpoint: vi.fn().mockReturnValue(null),
+  saveCheckpoint: vi.fn(),
+}));
+
 let tmpDir: string;
 
 beforeEach(() => {
@@ -64,6 +86,9 @@ function makeDeps(overrides: Partial<Record<keyof OrchestratorDeps, Record<strin
       { id: "task-1", title: "Build the API", status: "open", priority: 1, description: "Build backend API" },
     ]),
     claimTask: vi.fn().mockResolvedValue(true),
+    listInProgress: vi.fn().mockResolvedValue([]),
+    unclaimTask: vi.fn().mockResolvedValue(undefined),
+    closeTask: vi.fn().mockResolvedValue(undefined),
   };
 
   const defaultAgents = {
@@ -116,6 +141,7 @@ function makeDeps(overrides: Partial<Record<keyof OrchestratorDeps, Record<strin
     getQueueStats: vi.fn().mockResolvedValue({ pendingMessages: 0, urgentPending: 0, perAgent: {} }),
     drainQueue: vi.fn().mockResolvedValue(0),
     reportProgress: vi.fn().mockResolvedValue(undefined),
+    runRegressionGate: vi.fn().mockResolvedValue({ passed: true, commitSha: "abc123", tscErrors: [], testFailures: [] }),
   };
 
   return {

@@ -13,6 +13,7 @@ import { aggregateReviews } from "./review-aggregator.js";
 import { addMemory } from "./mem0.js";
 import { getQueueStats, drainQueue } from "./message-queue.js";
 import { reportProgress } from "./progress.js";
+import { runRegressionGate } from "./regression-gate.js";
 import { runOrchestrator, type SwarmRunResult } from "./orchestrator.js";
 
 // ---------------------------------------------------------------------------
@@ -52,6 +53,9 @@ async function main(): Promise<void> {
       addDependency: beads.addDependency,
       getReadyTasks: beads.getReadyTasks,
       claimTask: beads.claimTask,
+      listInProgress: beads.listInProgress,
+      unclaimTask: beads.unclaimTask,
+      closeTask: beads.closeTask,
     },
     agents: {
       loadPersonas,
@@ -68,6 +72,7 @@ async function main(): Promise<void> {
       getQueueStats,
       drainQueue,
       reportProgress,
+      runRegressionGate,
     },
   });
 
