@@ -3,7 +3,6 @@ services:
     image: swarm-opencode:latest
     volumes:
       - workspace:/workspace
-      - ./opencode-config:/root/.config/opencode:ro
       - ./personas:/workspace/.opencode/agents:ro
     ports:
       - "4096:4096"
@@ -17,12 +16,6 @@ services:
       timeout: 3s
       retries: 30
       start_period: 10s
-
-  beads:
-    image: swarm-beads:latest
-    volumes:
-      - workspace:/workspace
-      - beads-data:/root/.beads
 
   qdrant:
     image: qdrant/qdrant:v1.12.1
@@ -66,8 +59,6 @@ services:
     depends_on:
       opencode:
         condition: service_healthy
-      beads:
-        condition: service_started
       mem0:
         condition: service_started
 
@@ -82,5 +73,4 @@ services:
 
 volumes:
   workspace:
-  beads-data:
   qdrant-data:

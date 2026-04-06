@@ -26,7 +26,12 @@ export function extractUsage(response: unknown): UsageData {
   const zero: UsageData = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
   if (!response || typeof response !== "object") return zero;
 
-  const res = response as Record<string, unknown>;
+  let res = response as Record<string, unknown>;
+
+  // Unwrap SDK wrapper: { data, error, request, response }
+  if (res.data && typeof res.data === "object" && !res.usage && !res.metadata && !res.inputTokens) {
+    res = res.data as Record<string, unknown>;
+  }
 
   // Shape 1: { usage: { input_tokens, output_tokens } }
   if (res.usage && typeof res.usage === "object") {

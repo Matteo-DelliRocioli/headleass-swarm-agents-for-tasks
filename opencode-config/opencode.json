@@ -1,6 +1,5 @@
 {
-  "$schema": "https://opencode.ai/schema/config.json",
-  "agents": {
+  "agent": {
     "planner-agent": {
       "description": "Task planner -- decomposes high-level prompts into structured, assignable subtasks",
       "mode": "subagent",
@@ -9,43 +8,38 @@
       "tools": {
         "write": false,
         "edit": false,
-        "bash": "deny"
+        "bash": false
       }
     },
     "frontend-dev": {
       "description": "Frontend development specialist -- React, TypeScript, CSS, UI/UX",
       "mode": "subagent",
       "model": "anthropic/claude-sonnet-4-20250514",
-      "temperature": 0.4,
-      "tools": {}
+      "temperature": 0.4
     },
     "backend-dev": {
       "description": "Backend development specialist -- APIs, databases, server-side logic",
       "mode": "subagent",
       "model": "anthropic/claude-sonnet-4-20250514",
-      "temperature": 0.4,
-      "tools": {}
+      "temperature": 0.4
     },
     "database-specialist": {
       "description": "Database specialist -- schema design, migrations, query optimization",
       "mode": "subagent",
       "model": "anthropic/claude-sonnet-4-20250514",
-      "temperature": 0.2,
-      "tools": {}
+      "temperature": 0.2
     },
     "test-writer": {
       "description": "Test specialist -- unit, integration, and e2e test writer",
       "mode": "subagent",
       "model": "anthropic/claude-sonnet-4-20250514",
-      "temperature": 0.3,
-      "tools": {}
+      "temperature": 0.3
     },
     "devops-agent": {
       "description": "DevOps pipeline architect -- CI/CD, Docker, K8s, GitHub Actions",
       "mode": "subagent",
       "model": "anthropic/claude-sonnet-4-20250514",
-      "temperature": 0.3,
-      "tools": {}
+      "temperature": 0.3
     },
     "security-reviewer": {
       "description": "Security review agent -- OWASP Top 10, auth, injection, secrets exposure",
@@ -55,7 +49,7 @@
       "tools": {
         "write": false,
         "edit": false,
-        "bash": "deny"
+        "bash": false
       }
     },
     "quality-reviewer": {
@@ -66,7 +60,7 @@
       "tools": {
         "write": false,
         "edit": false,
-        "bash": "deny"
+        "bash": false
       }
     },
     "architecture-reviewer": {
@@ -77,36 +71,29 @@
       "tools": {
         "write": false,
         "edit": false,
-        "bash": "deny"
+        "bash": false
       }
     },
     "qa-evaluator": {
-      "description": "QA Evaluator -- functional testing via Playwright MCP, catches 'compiles but doesn't work' bugs",
+      "description": "QA Evaluator -- functional testing via Playwright MCP",
       "mode": "subagent",
       "model": "anthropic/claude-sonnet-4-20250514",
       "temperature": 0.2,
       "tools": {
         "write": false,
-        "edit": false,
-        "bash": true
+        "edit": false
       }
     },
     "master-reviewer": {
-      "description": "Master reviewer -- aggregates scores, calculates confidence, creates follow-up tasks",
+      "description": "Master reviewer -- aggregates scores, calculates confidence",
       "mode": "subagent",
       "model": "anthropic/claude-sonnet-4-20250514",
       "temperature": 0.1,
       "tools": {
         "write": false,
         "edit": false,
-        "bash": "deny"
+        "bash": false
       }
     }
-  },
-  "tools": {
-    "directory": "./tools"
-  },
-  "plugins": {
-    "directory": "./plugins"
   }
 }

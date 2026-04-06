@@ -46,6 +46,15 @@ async function getClient(config: OrchestratorConfig): Promise<OpenCodeClient> {
 }
 
 /**
+ * Extract session ID from SDK response.
+ * The SDK returns { data: { id }, error, request, response } (hey-api wrapper).
+ */
+function getSessionId(session: unknown): string {
+  const s = session as { id?: string; data?: { id?: string } } | null;
+  return s?.id ?? s?.data?.id ?? "";
+}
+
+/**
  * Build the context string injected into each agent session.
  * Includes: task details, roster of active agents, swarm rules.
  */
@@ -168,7 +177,7 @@ export async function spawnPlanner(
 
   // Inject persona context (noReply = don't trigger response yet)
   await client.session.prompt({
-    path: { id: session.id },
+    path: { id: getSessionId(session) },
     body: {
       noReply: true,
       parts: [{
@@ -184,7 +193,7 @@ export async function spawnPlanner(
     : ["anthropic", config.model];
 
   const response = await client.session.prompt({
-    path: { id: session.id },
+    path: { id: getSessionId(session) },
     body: {
       model: { providerID: provider, modelID: model },
       parts: [{
@@ -201,12 +210,12 @@ export async function spawnPlanner(
   const plan = extractPlannerOutput(response);
 
   logger.info("Planner completed", {
-    sessionId: session.id,
+    sessionId: getSessionId(session),
     taskCount: plan.tasks.length,
     summary: plan.summary,
   });
 
-  return { sessionId: session.id, plan };
+  return { sessionId: getSessionId(session), plan };
 }
 
 // ---------------------------------------------------------------------------
@@ -266,7 +275,7 @@ export async function reviewPlan(
     : ["anthropic", config.model];
 
   const response = await client.session.prompt({
-    path: { id: session.id },
+    path: { id: getSessionId(session) },
     body: {
       model: { providerID: provider, modelID: model },
       parts: [{
@@ -419,11 +428,16 @@ Please revise your plan to address this feedback. Output the complete revised pl
  */
 function extractPlannerOutput(response: unknown): PlannerOutput {
   // Try direct JSON content extraction from common response shapes
-  const res = response as Record<string, unknown> | null;
+  let res = response as Record<string, unknown> | null;
 
   if (!res) {
     logger.warn("Planner returned null response, using empty plan");
     return { summary: "Empty plan — planner returned no output", tasks: [] };
+  }
+
+  // Unwrap SDK wrapper: { data, error, request, response }
+  if (res.data && typeof res.data === "object" && !res.tasks && !res.parts) {
+    res = res.data as Record<string, unknown>;
   }
 
   // Shape 1: { content: string } — raw JSON string
@@ -460,6 +474,8 @@ function extractPlannerOutput(response: unknown): PlannerOutput {
 
   logger.warn("Could not parse planner response, using empty plan", {
     responseKeys: Object.keys(res),
+    error: res.error ? JSON.stringify(res.error).slice(0, 500) : undefined,
+    response: res.response ? JSON.stringify(res.response).slice(0, 500) : undefined,
   });
   return { summary: "Failed to parse planner output", tasks: [] };
 }
@@ -496,7 +512,7 @@ export async function spawnAgent(
   // Inject context (noReply = don't trigger AI response yet)
   const context = await buildAgentContext(persona, task, config);
   await client.session.prompt({
-    path: { id: session.id },
+    path: { id: getSessionId(session) },
     body: {
       noReply: true,
       parts: [{ type: "text", text: context }],
@@ -509,7 +525,7 @@ export async function spawnAgent(
     : ["anthropic", config.model];
 
   const response = await client.session.prompt({
-    path: { id: session.id },
+    path: { id: getSessionId(session) },
     body: {
       model: { providerID: provider, modelID: model },
       parts: [{ type: "text", text: task.description ?? task.title }],
@@ -517,8 +533,8 @@ export async function spawnAgent(
   });
 
   const usage = extractUsage(response);
-  logger.info("Agent spawned", { sessionId: session.id, persona: persona.id, task: task.id, tokens: usage.totalTokens });
-  return { sessionId: session.id, persona, task, usage };
+  logger.info("Agent spawned", { sessionId: getSessionId(session), persona: persona.id, task: task.id, tokens: usage.totalTokens });
+  return { sessionId: getSessionId(session), persona, task, usage };
 }
 
 export interface ReviewerOutput {
@@ -585,7 +601,7 @@ export async function spawnReviewer(
 
   // Inject review context with persona instructions + shared memory
   await client.session.prompt({
-    path: { id: session.id },
+    path: { id: getSessionId(session) },
     body: {
       noReply: true,
       parts: [{
@@ -601,7 +617,7 @@ export async function spawnReviewer(
     : ["anthropic", config.model];
 
   const response = await client.session.prompt({
-    path: { id: session.id },
+    path: { id: getSessionId(session) },
     body: {
       model: { providerID: provider, modelID: model },
       parts: [{ type: "text", text: "Review all changes made in this workspace. Analyze code quality, security, and architecture. Output your structured review." }],
@@ -617,7 +633,7 @@ export async function spawnReviewer(
   const usage = extractUsage(response);
 
   logger.info("Reviewer completed", {
-    sessionId: session.id,
+    sessionId: getSessionId(session),
     persona: persona.id,
     score: parsed.score,
     issueCount: parsed.issues.length,
@@ -625,7 +641,7 @@ export async function spawnReviewer(
   });
 
   return {
-    sessionId: session.id,
+    sessionId: getSessionId(session),
     persona,
     score: parsed.score,
     issues: parsed.issues,
@@ -641,12 +657,17 @@ function extractReviewOutput(
   response: unknown,
   reviewerId: string,
 ): { score: number; issues: ReviewerOutput["issues"] } {
-  const res = response as Record<string, unknown> | null;
+  let res = response as Record<string, unknown> | null;
   const fallback = { score: 0.5, issues: [] as ReviewerOutput["issues"] };
 
   if (!res) {
     logger.warn("Reviewer returned null response", { reviewerId });
     return fallback;
+  }
+
+  // Unwrap SDK wrapper: { data, error, request, response }
+  if (res.data && typeof res.data === "object" && !res.score && !res.parts) {
+    res = res.data as Record<string, unknown>;
   }
 
   // Try common response shapes (same as planner extraction)
@@ -674,7 +695,12 @@ function extractReviewOutput(
   }
 
   if (!raw) {
-    logger.warn("Could not parse reviewer response", { reviewerId, responseKeys: Object.keys(res) });
+    logger.warn("Could not parse reviewer response", {
+      reviewerId,
+      responseKeys: Object.keys(res),
+      error: res.error ? JSON.stringify(res.error).slice(0, 500) : undefined,
+      response: res.response ? JSON.stringify(res.response).slice(0, 500) : undefined,
+    });
     return fallback;
   }
 
