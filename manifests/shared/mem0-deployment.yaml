@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: mem0
-          image: mem0ai/mem0:latest
+          image: swarm-mem0:latest
           ports:
             - containerPort: 8080
           env:

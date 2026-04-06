@@ -36,15 +36,18 @@ services:
       - "6334:6334"
 
   mem0:
-    image: mem0ai/mem0:latest
+    build:
+      context: .
+      dockerfile: operator/images/mem0/Dockerfile
     environment:
       - QDRANT_URL=http://qdrant:6333
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - MEM0_LLM_MODEL=${MEM0_LLM_MODEL:-gpt-4o-mini}
+      - MEM0_EMBEDDING_MODEL=${MEM0_EMBEDDING_MODEL:-text-embedding-3-small}
     ports:
       - "8080:8080"
     depends_on:
       - qdrant
-    volumes:
-      - mem0-data:/data
 
   orchestrator:
     build:
