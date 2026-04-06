@@ -701,3 +701,8 @@ function extractReviewOutput(
 
   return { score, issues };
 }
+
+/** @internal — exported for testing */
+export { extractPlannerOutput as _extractPlannerOutput };
+/** @internal — exported for testing */
+export { extractReviewOutput as _extractReviewOutput };

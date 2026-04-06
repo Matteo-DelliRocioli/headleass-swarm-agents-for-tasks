@@ -1,0 +1,10 @@
+{
+  "score": 0.3,
+  "issues": [
+    { "severity": "critical", "description": "SQL injection vulnerability: user input is interpolated directly into SQL query string without parameterization", "file": "sql-injection.ts", "line": 9 },
+    { "severity": "critical", "description": "Hardcoded JWT secret key exposed in source code instead of loaded from environment variable", "file": "hardcoded-secrets.ts", "line": 5 },
+    { "severity": "high", "description": "Hardcoded Stripe API secret key embedded in source code", "file": "hardcoded-secrets.ts", "line": 8 },
+    { "severity": "medium", "description": "No rate limiting on login endpoint allows brute force attacks", "file": "src/routes/auth.ts", "line": 34 },
+    { "severity": "low", "description": "CORS configuration allows all origins in production", "file": "src/server.ts", "line": 8 }
+  ]
+}

@@ -1,0 +1,36 @@
+apiVersion: swarm.agentswarm.io/v1alpha1
+kind: SwarmRun
+metadata:
+  name: instagram-clone-golden
+spec:
+  prompt: |
+    Build an Instagram clone web application with the following features:
+
+    User Authentication:
+    - User registration with email and username
+    - Login with JWT-based session management
+    - Password hashing with bcrypt
+
+    Image Feed:
+    - Users can upload images with captions
+    - Main feed shows posts from followed users
+    - Infinite scroll pagination
+
+    Social Features:
+    - Like/unlike posts
+    - Comment on posts
+    - Follow/unfollow users
+    - User profile pages with post grid
+
+    Tech stack: React 18 + TypeScript frontend, Express + TypeScript backend, PostgreSQL database
+  maxLoops: 3
+  confidenceThreshold: 0.85
+  model: anthropic/claude-sonnet-4-20250514
+  personas:
+    - frontend-dev
+    - backend-dev
+    - database-specialist
+    - test-writer
+    - devops-agent
+  priority: 1
+  timeout: "2h"

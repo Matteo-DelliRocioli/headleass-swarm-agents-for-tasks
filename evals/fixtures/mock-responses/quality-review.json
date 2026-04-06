@@ -1,0 +1,7 @@
+{
+  "score": 0.78,
+  "issues": [
+    { "severity": "medium", "description": "Error handling in feed endpoint returns raw database errors to client", "file": "src/routes/posts.ts", "line": 67 },
+    { "severity": "low", "description": "Unused import of 'Response' type in auth middleware", "file": "src/auth/middleware.ts", "line": 2 }
+  ]
+}

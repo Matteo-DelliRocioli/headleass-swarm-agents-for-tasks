@@ -1,0 +1,93 @@
+services:
+  opencode:
+    build:
+      context: .
+      dockerfile: operator/images/opencode/Dockerfile
+    volumes:
+      - workspace:/workspace
+      - ./opencode-config:/root/.config/opencode:ro
+      - ./personas:/workspace/.opencode/agents:ro
+    ports:
+      - "4096:4096"
+    environment:
+      - OPENCODE_HOST=0.0.0.0
+      - OPENCODE_PORT=4096
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:4096/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+
+  beads:
+    build:
+      context: .
+      dockerfile: operator/images/beads/Dockerfile
+    volumes:
+      - workspace:/workspace
+      - beads-data:/root/.beads
+
+  qdrant:
+    image: qdrant/qdrant:v1.12.1
+    volumes:
+      - qdrant-data:/qdrant/storage
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+
+  mem0:
+    image: mem0ai/mem0:latest
+    environment:
+      - QDRANT_URL=http://qdrant:6333
+    ports:
+      - "8080:8080"
+    depends_on:
+      - qdrant
+    volumes:
+      - mem0-data:/data
+
+  orchestrator:
+    build:
+      context: .
+      dockerfile: operator/images/orchestrator/Dockerfile
+    volumes:
+      - workspace:/workspace
+      - ./personas:/workspace/.opencode/agents:ro
+    environment:
+      - OPENCODE_HOST=opencode
+      - OPENCODE_PORT=4096
+      - SWARM_INITIAL_PROMPT=${SWARM_INITIAL_PROMPT:-Build a hello world Express app}
+      - SWARM_RUN_NAME=${SWARM_RUN_NAME:-local-run}
+      - SWARM_MAX_LOOPS=${SWARM_MAX_LOOPS:-3}
+      - SWARM_CONFIDENCE_THRESHOLD=${SWARM_CONFIDENCE_THRESHOLD:-0.85}
+      - SWARM_MODEL=${SWARM_MODEL:-anthropic/claude-sonnet-4-20250514}
+      - SWARM_PERSONAS=${SWARM_PERSONAS:-}
+      - MEM0_API_URL=http://mem0:8080
+      - WORKSPACE_PATH=/workspace
+      - PERSONAS_PATH=/workspace/.opencode/agents
+      - SWARM_STATE_PATH=/workspace/.swarm
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    depends_on:
+      opencode:
+        condition: service_healthy
+      beads:
+        condition: service_started
+      mem0:
+        condition: service_started
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+    depends_on:
+      - orchestrator
+
+volumes:
+  workspace:
+  beads-data:
+  mem0-data:
+  qdrant-data:

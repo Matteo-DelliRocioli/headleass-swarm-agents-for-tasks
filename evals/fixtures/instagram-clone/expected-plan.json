@@ -1,0 +1,16 @@
+{
+  "_comment": "Structural expectations for planner output validation. Fields prefixed with 'min_' or 'max_' are numeric bounds, not exact values.",
+  "min_tasks": 3,
+  "max_tasks": 12,
+  "required_persona_coverage": ["frontend-dev", "backend-dev", "database-specialist"],
+  "expected_task_categories": [
+    { "keyword": "database", "description": "At least one task related to database schema or migrations" },
+    { "keyword": "auth", "description": "At least one task related to authentication" },
+    { "keyword": "api", "description": "At least one task related to API endpoints" },
+    { "keyword": "frontend", "description": "At least one task related to frontend UI" }
+  ],
+  "dependency_rules": [
+    "Database schema tasks should not depend on frontend tasks",
+    "Frontend tasks should depend on at least one backend task"
+  ]
+}

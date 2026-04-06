@@ -1,0 +1,8 @@
+{
+  "score": 0.55,
+  "issues": [
+    { "severity": "high", "description": "Circular import cycle detected: a.ts -> b.ts -> c.ts -> a.ts. This creates a dependency cycle that can cause undefined module references at runtime.", "file": "circular-deps/a.ts", "line": 1 },
+    { "severity": "medium", "description": "Feed query has no pagination limit, will degrade with large datasets", "file": "src/routes/posts.ts", "line": 45 },
+    { "severity": "low", "description": "Database connection logic duplicated across route files instead of using shared pool", "file": "src/routes/auth.ts", "line": 5 }
+  ]
+}

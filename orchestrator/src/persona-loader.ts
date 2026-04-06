@@ -56,21 +56,33 @@ function extractFrontmatter(content: string, key: string): string | undefined {
 }
 
 /**
- * Match a task to the best persona based on keywords in the task title/description.
- * Falls back to first available non-reviewer persona.
+ * Match a task to the best persona.
+ * Priority: 1) planner's suggestedPersona, 2) keyword matching, 3) undefined.
+ * Returns undefined if no match — caller must handle (fail-fast, not skip).
  */
 export function matchPersonaToTask(
   taskTitle: string,
   taskDescription: string | undefined,
   personas: Map<string, Persona>,
   allowedPersonas?: string[],
+  suggestedPersona?: string,
 ): Persona | undefined {
-  const text = `${taskTitle} ${taskDescription ?? ""}`.toLowerCase();
   const candidates = [...personas.values()]
     .filter(p => !p.isReviewer) // Only implementation personas
     .filter(p => !allowedPersonas || allowedPersonas.includes(p.id));
 
-  // Keyword matching — maps persona IDs to task keywords
+  // Priority 1: Use planner's suggestion if available and valid
+  if (suggestedPersona) {
+    const suggested = candidates.find(p => p.id === suggestedPersona);
+    if (suggested) return suggested;
+    logger.warn("Suggested persona not in candidates", {
+      suggestedPersona,
+      available: candidates.map(c => c.id),
+    });
+  }
+
+  // Priority 2: Keyword matching
+  const text = `${taskTitle} ${taskDescription ?? ""}`.toLowerCase();
   const keywords: Record<string, string[]> = {
     "frontend-dev": ["frontend", "react", "ui", "css", "component", "page", "layout", "style", "tailwind", "html", "jsx", "tsx", "responsive", "animation"],
     "backend-dev": ["backend", "api", "server", "auth", "endpoint", "middleware", "route", "rest", "graphql", "websocket", "jwt", "oauth"],
@@ -86,6 +98,6 @@ export function matchPersonaToTask(
     }
   }
 
-  // Fallback: first available
-  return candidates[0];
+  // No match — caller must handle (fail-fast)
+  return undefined;
 }

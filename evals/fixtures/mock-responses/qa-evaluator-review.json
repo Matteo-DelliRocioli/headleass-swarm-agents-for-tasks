@@ -1,0 +1,8 @@
+{
+  "score": 0.85,
+  "app_started": true,
+  "features_tested": 6,
+  "issues": [
+    { "severity": "medium", "description": "Profile page returns 500 when user has no posts", "file": "src/routes/users.ts", "line": 89 }
+  ]
+}

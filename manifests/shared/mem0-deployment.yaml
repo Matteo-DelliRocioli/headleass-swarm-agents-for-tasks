@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mem0-api
+  namespace: swarm-system
+  labels:
+    app: mem0-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mem0-api
+  template:
+    metadata:
+      labels:
+        app: mem0-api
+    spec:
+      containers:
+        - name: mem0
+          image: mem0ai/mem0:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: QDRANT_URL
+              value: "http://qdrant:6333"
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
