@@ -13,6 +13,7 @@ import { aggregateReviews, type ReviewResult } from "./review-aggregator.js";
 import { addMemory, type Mem0Config } from "./mem0.js";
 import { getQueueStats, drainQueue } from "./message-queue.js";
 import { UsageAccumulator } from "./usage-tracker.js";
+import { reportProgress } from "./progress.js";
 
 // ---------------------------------------------------------------------------
 // Termination signal — writes result to /dev/termination-log + result.json
@@ -342,6 +343,17 @@ async function main(): Promise<void> {
       threshold: config.confidenceThreshold,
       followUpTasks: aggregated.followUpTasks.length,
       durationMs: loopDuration,
+    });
+
+    // Report progress via pod annotations (read by operator + dashboard)
+    await reportProgress({
+      currentLoop,
+      maxLoops: config.maxLoops,
+      confidence: aggregated.confidence,
+      phase: "reviewing",
+      completedTasks,
+      totalTasks,
+      estimatedCostUsd: usage.getEstimatedCostUsd(),
     });
 
     // Store loop observation in Mem0 for next iteration's agents

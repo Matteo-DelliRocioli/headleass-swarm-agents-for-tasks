@@ -1,0 +1,92 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: swarm-telegram-bot
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: swarm-telegram-bot
+rules:
+  - apiGroups:
+      - swarm.agentswarm.io
+    resources:
+      - swarmruns
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: swarm-telegram-bot
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: swarm-telegram-bot
+subjects:
+  - kind: ServiceAccount
+    name: swarm-telegram-bot
+    namespace: default
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: telegram-bot-secret
+type: Opaque
+stringData:
+  token: "YOUR_BOT_TOKEN_HERE"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: swarm-telegram-bot
+  labels:
+    app: swarm-telegram-bot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: swarm-telegram-bot
+  template:
+    metadata:
+      labels:
+        app: swarm-telegram-bot
+    spec:
+      serviceAccountName: swarm-telegram-bot
+      containers:
+        - name: bot
+          image: swarm-telegram-bot:latest
+          imagePullPolicy: Never
+          env:
+            - name: TELEGRAM_BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: telegram-bot-secret
+                  key: token
+            - name: TELEGRAM_CHAT_ID
+              value: "YOUR_CHAT_ID_HERE"
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: STUCK_THRESHOLD_MINUTES
+              value: "10"
+            - name: DASHBOARD_URL
+              value: "http://swarm-dashboard"
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "0.05"
+            limits:
+              memory: "128Mi"
+              cpu: "0.1"

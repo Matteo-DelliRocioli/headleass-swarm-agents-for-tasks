@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Swarm Dashboard</title>
+<style>
+  :root { --bg: #0d1117; --card: #161b22; --border: #30363d; --text: #e6edf3; --muted: #8b949e; --blue: #58a6ff; --green: #3fb950; --red: #f85149; --orange: #d29922; --yellow: #e3b341; --gray: #484f58; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size: 14px; padding: 24px; }
+  h1 { font-size: 20px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+  h1 span { font-size: 12px; color: var(--muted); font-weight: normal; }
+  .empty { color: var(--muted); text-align: center; padding: 48px 0; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  tr:hover { background: rgba(88, 166, 255, 0.04); }
+  .phase { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+  .phase-Queued { background: var(--gray); }
+  .phase-Running { background: #1f6feb; }
+  .phase-Reviewing { background: #8957e5; }
+  .phase-Completed { background: #238636; }
+  .phase-Failed { background: #da3633; }
+  .phase-TimedOut { background: var(--orange); color: #000; }
+  .phase-Unknown { background: var(--gray); }
+  .conf-bar { width: 100px; height: 6px; background: var(--border); border-radius: 3px; display: inline-block; vertical-align: middle; margin-right: 6px; }
+  .conf-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+  .conf-low { background: var(--red); }
+  .conf-mid { background: var(--yellow); }
+  .conf-high { background: var(--green); }
+  .stuck { animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%, 100% { box-shadow: none; } 50% { box-shadow: 0 0 0 2px var(--red); } }
+  .btn { padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); cursor: pointer; font-size: 12px; text-decoration: none; }
+  .btn:hover { border-color: var(--blue); color: var(--blue); }
+  .btn-danger { color: var(--red); }
+  .btn-danger:hover { border-color: var(--red); }
+  .actions { display: flex; gap: 6px; }
+  .mono { font-family: 'SF Mono', Consolas, monospace; font-size: 12px; }
+  #connection { font-size: 11px; padding: 2px 6px; border-radius: 4px; }
+  .connected { background: #238636; }
+  .disconnected { background: #da3633; }
+</style>
+</head>
+<body>
+
+<h1>Swarm Dashboard <span id="connection" class="disconnected">disconnected</span></h1>
+
+<div id="content"><p class="empty">Connecting...</p></div>
+
+<script>
+const runs = new Map();
+const STUCK_MS = 10 * 60 * 1000;
+
+function render() {
+  const el = document.getElementById('content');
+  if (runs.size === 0) {
+    el.innerHTML = '<p class="empty">No swarm runs</p>';
+    return;
+  }
+
+  const sorted = [...runs.values()].sort((a, b) => {
+    const order = { Running: 0, Reviewing: 1, Queued: 2, Completed: 3, Failed: 4, TimedOut: 5 };
+    return (order[a.phase] ?? 6) - (order[b.phase] ?? 6);
+  });
+
+  let html = `<table>
+    <thead><tr>
+      <th>Name</th><th>Phase</th><th>Loop</th><th>Confidence</th><th>Duration</th><th>Pod</th><th>Actions</th>
+    </tr></thead><tbody>`;
+
+  for (const r of sorted) {
+    const isStuck = r._stuckSince && (Date.now() - r._stuckSince > STUCK_MS);
+    const stuckClass = isStuck ? ' class="stuck"' : '';
+    const loop = r.currentLoop != null ? `${r.currentLoop}/${r.maxLoops ?? '?'}` : '-';
+    const conf = r.confidence != null ? r.confidence : null;
+    const confPct = conf != null ? Math.round(conf * 100) : null;
+    const confClass = conf == null ? '' : conf >= 0.7 ? 'conf-high' : conf >= 0.4 ? 'conf-mid' : 'conf-low';
+    const confBar = conf != null
+      ? `<span class="conf-bar"><span class="conf-fill ${confClass}" style="width:${confPct}%"></span></span>${confPct}%`
+      : '-';
+    const dur = r.startTime ? Math.floor((Date.now() - new Date(r.startTime).getTime()) / 60000) + 'm' : '-';
+    const pod = r.podName ? `<span class="mono">${r.podName}</span>` : '-';
+
+    const actions = [];
+    if (r.podName && (r.phase === 'Running' || r.phase === 'Reviewing')) {
+      actions.push(`<a class="btn" href="/terminal/${r.podName}/" target="_blank">Terminal</a>`);
+    }
+    if (r.phase !== 'Completed' && r.phase !== 'Failed' && r.phase !== 'TimedOut') {
+      actions.push(`<button class="btn btn-danger" onclick="cancelRun('${r.name}')">Cancel</button>`);
+    }
+
+    html += `<tr${stuckClass}>
+      <td><strong>${r.name}</strong>${isStuck ? ' <span style="color:var(--red)">STUCK</span>' : ''}</td>
+      <td><span class="phase phase-${r.phase}">${r.phase}</span></td>
+      <td>${loop}</td>
+      <td>${confBar}</td>
+      <td>${dur}</td>
+      <td>${pod}</td>
+      <td><div class="actions">${actions.join('')}</div></td>
+    </tr>`;
+  }
+
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+function connectSSE() {
+  const connEl = document.getElementById('connection');
+  const es = new EventSource('/api/stream');
+
+  es.onopen = () => {
+    connEl.textContent = 'connected';
+    connEl.className = 'connected';
+  };
+
+  es.onerror = () => {
+    connEl.textContent = 'disconnected';
+    connEl.className = 'disconnected';
+    es.close();
+    setTimeout(connectSSE, 3000);
+  };
+
+  es.addEventListener('run:update', (e) => {
+    const run = JSON.parse(e.data);
+    const prev = runs.get(run.name);
+
+    // Track stuck state
+    if (prev && run.phase === prev.phase && run.confidence === prev.confidence && run.currentLoop === prev.currentLoop) {
+      run._stuckSince = prev._stuckSince || Date.now();
+    } else {
+      run._stuckSince = null;
+    }
+
+    runs.set(run.name, run);
+    render();
+  });
+
+  es.addEventListener('run:delete', (e) => {
+    const { name } = JSON.parse(e.data);
+    runs.delete(name);
+    render();
+  });
+}
+
+async function cancelRun(name) {
+  if (!confirm(`Cancel run "${name}"?`)) return;
+  try {
+    await fetch(`/api/runs/${name}`, { method: 'DELETE' });
+  } catch (err) {
+    alert('Failed to cancel: ' + err);
+  }
+}
+
+connectSSE();
+</script>
+</body>
+</html>
