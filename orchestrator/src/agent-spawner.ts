@@ -36,11 +36,10 @@ let _client: OpenCodeClient | null = null;
 
 async function getClient(config: OrchestratorConfig): Promise<OpenCodeClient> {
   if (_client) return _client;
-  // Dynamic import to handle SDK availability
-  const { createOpencode } = await import("@opencode-ai/sdk");
-  const { client } = await createOpencode({
-    hostname: config.opencodeHost,
-    port: config.opencodePort,
+  // Connect to an existing OpenCode server (don't spawn one)
+  const { createOpencodeClient } = await import("@opencode-ai/sdk");
+  const client = createOpencodeClient({
+    baseUrl: `http://${config.opencodeHost}:${config.opencodePort}`,
   });
   _client = client as unknown as OpenCodeClient;
   return _client;

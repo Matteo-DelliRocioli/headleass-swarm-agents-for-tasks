@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  operator:
+    name: Operator — build + test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: operator
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          # no cache — lock files are gitignored
+      - run: npm install
+      - run: npx tsc --noEmit
+        name: TypeScript type check
+      - run: npm test
+        name: Unit tests
+
+  orchestrator:
+    name: Orchestrator — type check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: orchestrator
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          # no cache — lock files are gitignored
+      - run: npm install
+      - run: npx tsc --noEmit
+        name: TypeScript type check
+
+  docker:
+    name: Docker — build operator image
+    runs-on: ubuntu-latest
+    needs: [operator]
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          # no cache — lock files are gitignored
+      - run: cd operator && npm install && npx tsc
+        name: Build TypeScript
+      - run: docker build -f operator/images/operator/Dockerfile -t swarmrun-operator:${{ github.sha }} .
+        name: Build operator image
