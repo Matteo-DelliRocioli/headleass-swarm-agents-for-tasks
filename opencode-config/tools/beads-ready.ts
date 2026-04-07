@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { tool } from "@opencode-ai/plugin";
 import { runBd } from "./_bd-limiter.js";
 
@@ -16,15 +17,15 @@ export default tool({
         parsed = stdout.trim();
       }
 
-      return {
+      return JSON.stringify({
         success: true,
         tasks: parsed,
-      };
+      });
     } catch (err: any) {
-      return {
+      return JSON.stringify({
         success: false,
         error: err.message ?? String(err),
-      };
+      });
     }
   },
 });

@@ -8,13 +8,24 @@ import type { Persona } from "./persona-loader.js";
 import type { BeadsTask } from "./beads.js";
 import { listTasks } from "./beads.js";
 import { searchAll, formatMemoriesAsContext, type Mem0Config } from "./mem0.js";
-import { extractUsage, type UsageData } from "./usage-tracker.js";
+import { type UsageData } from "./usage-tracker.js";
+import {
+  openCompletionWaiter,
+  extractTextFromParts,
+  parseJsonFromText,
+  type CompletedMessage,
+  type MessagePart,
+} from "./llm-wait.js";
 
 // The OpenCode SDK client type — we use dynamic import since it may not be
 // available at compile time in all environments.
+//
+// Note: session.prompt() is fire-and-forget in OpenCode v1.x. The actual
+// LLM response comes via SSE events on /event. See llm-wait.ts for the
+// completion-waiting helper.
 type OpenCodeClient = {
   session: {
-    create: (opts: { body: { title: string } }) => Promise<{ id: string }>;
+    create: (opts: { body: { title: string } }) => Promise<unknown>;
     prompt: (opts: {
       path: { id: string };
       body: {
@@ -24,10 +35,11 @@ type OpenCodeClient = {
         format?: { type: string; schema?: unknown };
       };
     }) => Promise<unknown>;
+    messages: (opts: { path: { id: string } }) => Promise<unknown>;
   };
   event: {
     subscribe: () => Promise<{
-      stream: AsyncIterable<{ type: string; properties: Record<string, unknown> }>;
+      stream: AsyncIterable<unknown>;
     }>;
   };
 };
@@ -52,6 +64,16 @@ async function getClient(config: OrchestratorConfig): Promise<OpenCodeClient> {
 function getSessionId(session: unknown): string {
   const s = session as { id?: string; data?: { id?: string } } | null;
   return s?.id ?? s?.data?.id ?? "";
+}
+
+/**
+ * Extract usage data from a CompletedMessage (from llm-wait.ts).
+ * The OpenCode AssistantMessage has tokens.input and tokens.output.
+ */
+function usageFromMessage(completed: CompletedMessage): UsageData {
+  const input = completed.tokens?.input ?? 0;
+  const output = completed.tokens?.output ?? 0;
+  return { inputTokens: input, outputTokens: output, totalTokens: input + output };
 }
 
 /**
@@ -192,30 +214,32 @@ export async function spawnPlanner(
     ? config.model.split("/", 2)
     : ["anthropic", config.model];
 
-  const response = await client.session.prompt({
-    path: { id: getSessionId(session) },
+  const sessionId = getSessionId(session);
+
+  // Open SSE waiter BEFORE sending the prompt to avoid missing the completion event
+  const { wait } = await openCompletionWaiter(client, sessionId);
+  await client.session.prompt({
+    path: { id: sessionId },
     body: {
       model: { providerID: provider, modelID: model },
       parts: [{
         type: "text",
-        text: `Decompose this prompt into implementation tasks:\n\n---\n${initialPrompt}\n---\n\nExplore the workspace first, then output your structured task plan as JSON.`,
+        text: `Decompose this prompt into implementation tasks:\n\n---\n${initialPrompt}\n---\n\nExplore the workspace first, then output your structured task plan.\n\nOutput ONLY valid JSON matching this schema (no prose, no markdown fences):\n${JSON.stringify(PLANNER_JSON_SCHEMA, null, 2)}`,
       }],
-      format: {
-        type: "json_schema",
-        schema: PLANNER_JSON_SCHEMA,
-      },
     },
   });
+  const completed = await wait;
 
-  const plan = extractPlannerOutput(response);
+  const plan = extractPlannerOutput(completed.parts);
 
   logger.info("Planner completed", {
-    sessionId: getSessionId(session),
+    sessionId,
     taskCount: plan.tasks.length,
     summary: plan.summary,
+    tokens: usageFromMessage(completed).totalTokens,
   });
 
-  return { sessionId: getSessionId(session), plan };
+  return { sessionId, plan };
 }
 
 // ---------------------------------------------------------------------------
@@ -274,8 +298,10 @@ export async function reviewPlan(
     ? config.model.split("/", 2)
     : ["anthropic", config.model];
 
-  const response = await client.session.prompt({
-    path: { id: getSessionId(session) },
+  const sessionId = getSessionId(session);
+  const { wait } = await openCompletionWaiter(client, sessionId);
+  await client.session.prompt({
+    path: { id: sessionId },
     body: {
       model: { providerID: provider, modelID: model },
       parts: [{
@@ -299,55 +325,44 @@ ${planJson}
 6. **Priority**: Are priorities sensible? Critical path items should be P0/P1.
 
 Score 0.8+ means the plan is good enough to execute. Below 0.8 means it needs revision.
-Provide specific, actionable feedback referencing task titles.`,
+Provide specific, actionable feedback referencing task titles.
+
+Output ONLY valid JSON matching this schema (no prose, no markdown fences):
+${JSON.stringify(PLAN_REVIEW_SCHEMA, null, 2)}`,
       }],
-      format: {
-        type: "json_schema",
-        schema: PLAN_REVIEW_SCHEMA,
-      },
     },
   });
+  const completed = await wait;
 
-  const result = extractPlanReview(response);
+  const result = extractPlanReview(completed.parts);
 
   logger.info("Plan review completed", {
     approved: result.approved,
     score: result.score,
     issueCount: result.issues.length,
+    tokens: usageFromMessage(completed).totalTokens,
   });
 
   return result;
 }
 
-function extractPlanReview(response: unknown): PlanReviewResult {
-  const res = response as Record<string, unknown> | null;
-  const fallback: PlanReviewResult = { approved: true, score: 0.8, feedback: "Review parse failed — auto-approving", issues: [] };
+function extractPlanReview(parts: MessagePart[]): PlanReviewResult {
+  const fallback: PlanReviewResult = {
+    approved: true,
+    score: 0.8,
+    feedback: "Review parse failed — auto-approving",
+    issues: [],
+  };
 
-  if (!res) return fallback;
-
-  // Try common response shapes
-  let raw: Record<string, unknown> | undefined;
-
-  if (typeof res.content === "string") {
-    try { raw = JSON.parse(res.content); } catch { /* fall through */ }
-  }
-  if (!raw && Array.isArray(res.parts)) {
-    for (const part of res.parts) {
-      const p = part as Record<string, unknown>;
-      if (typeof p.text === "string") {
-        try { raw = JSON.parse(p.text); break; } catch { /* fall through */ }
-      }
-    }
-  }
-  if (!raw && res.result && typeof res.result === "object") {
-    raw = res.result as Record<string, unknown>;
-  }
-  if (!raw && typeof res.approved === "boolean") {
-    raw = res as Record<string, unknown>;
+  const text = extractTextFromParts(parts);
+  if (!text) {
+    logger.warn("Plan review returned empty text — auto-approving");
+    return fallback;
   }
 
+  const raw = parseJsonFromText<Record<string, unknown>>(text);
   if (!raw) {
-    logger.warn("Could not parse plan review response — auto-approving");
+    logger.warn("Could not parse plan review JSON — auto-approving", { textPreview: text.slice(0, 200) });
     return fallback;
   }
 
@@ -357,8 +372,8 @@ function extractPlanReview(response: unknown): PlanReviewResult {
     feedback: typeof raw.feedback === "string" ? raw.feedback : "",
     issues: Array.isArray(raw.issues)
       ? (raw.issues as Array<Record<string, unknown>>)
-          .filter(i => typeof i.task_title === "string" && typeof i.issue === "string")
-          .map(i => ({ task_title: i.task_title as string, issue: i.issue as string }))
+          .filter((i) => typeof i.task_title === "string" && typeof i.issue === "string")
+          .map((i) => ({ task_title: i.task_title as string, issue: i.issue as string }))
       : [],
   };
 }
@@ -385,7 +400,8 @@ export async function revisePlan(
     ? config.model.split("/", 2)
     : ["anthropic", config.model];
 
-  const response = await client.session.prompt({
+  const { wait } = await openCompletionWaiter(client, plannerSessionId);
+  await client.session.prompt({
     path: { id: plannerSessionId },
     body: {
       model: { providerID: provider, modelID: model },
@@ -402,16 +418,13 @@ ${review.feedback}
 ### Specific Issues
 ${issueList}
 
-Please revise your plan to address this feedback. Output the complete revised plan as JSON (same format as before).`,
+Please revise your plan to address this feedback. Output ONLY valid JSON (no prose, no markdown fences) matching the same schema as before.`,
       }],
-      format: {
-        type: "json_schema",
-        schema: PLANNER_JSON_SCHEMA,
-      },
     },
   });
+  const completed = await wait;
 
-  const plan = extractPlannerOutput(response);
+  const plan = extractPlannerOutput(completed.parts);
 
   logger.info("Plan revision completed", {
     iteration,
@@ -423,59 +436,32 @@ Please revise your plan to address this feedback. Output the complete revised pl
 }
 
 /**
- * Parse the planner's structured JSON response.
- * The OpenCode SDK returns the formatted response; exact shape depends on SDK version.
+ * Parse the planner's structured JSON output from an assistant message's parts.
+ * Concatenates all TextParts and tries: direct JSON parse, then fenced code block,
+ * then any { ... } block in the text.
  */
-function extractPlannerOutput(response: unknown): PlannerOutput {
-  // Try direct JSON content extraction from common response shapes
-  let res = response as Record<string, unknown> | null;
-
-  if (!res) {
-    logger.warn("Planner returned null response, using empty plan");
+function extractPlannerOutput(parts: MessagePart[]): PlannerOutput {
+  if (!Array.isArray(parts) || parts.length === 0) {
+    logger.warn("Planner returned empty parts, using empty plan");
     return { summary: "Empty plan — planner returned no output", tasks: [] };
   }
 
-  // Unwrap SDK wrapper: { data, error, request, response }
-  if (res.data && typeof res.data === "object" && !res.tasks && !res.parts) {
-    res = res.data as Record<string, unknown>;
+  const text = extractTextFromParts(parts);
+  if (!text) {
+    logger.warn("Planner parts contained no text, using empty plan");
+    return { summary: "Empty plan — no text in planner output", tasks: [] };
   }
 
-  // Shape 1: { content: string } — raw JSON string
-  if (typeof res.content === "string") {
-    try {
-      return JSON.parse(res.content) as PlannerOutput;
-    } catch { /* fall through */ }
+  const parsed = parseJsonFromText<PlannerOutput>(text);
+  if (parsed && Array.isArray(parsed.tasks)) {
+    return {
+      summary: typeof parsed.summary === "string" ? parsed.summary : "(no summary)",
+      tasks: parsed.tasks,
+    };
   }
 
-  // Shape 2: { parts: [{ text: string }] } — message parts
-  if (Array.isArray(res.parts)) {
-    for (const part of res.parts) {
-      const p = part as Record<string, unknown>;
-      if (typeof p.text === "string") {
-        try {
-          return JSON.parse(p.text) as PlannerOutput;
-        } catch { /* fall through */ }
-      }
-    }
-  }
-
-  // Shape 3: { result: { ... } } — already parsed
-  if (res.result && typeof res.result === "object") {
-    const result = res.result as Record<string, unknown>;
-    if (Array.isArray(result.tasks)) {
-      return result as unknown as PlannerOutput;
-    }
-  }
-
-  // Shape 4: direct object with tasks array
-  if (Array.isArray(res.tasks)) {
-    return res as unknown as PlannerOutput;
-  }
-
-  logger.warn("Could not parse planner response, using empty plan", {
-    responseKeys: Object.keys(res),
-    error: res.error ? JSON.stringify(res.error).slice(0, 500) : undefined,
-    response: res.response ? JSON.stringify(res.response).slice(0, 500) : undefined,
+  logger.warn("Could not parse planner JSON, using empty plan", {
+    textPreview: text.slice(0, 300),
   });
   return { summary: "Failed to parse planner output", tasks: [] };
 }
@@ -524,17 +510,20 @@ export async function spawnAgent(
     ? config.model.split("/", 2)
     : ["anthropic", config.model];
 
-  const response = await client.session.prompt({
-    path: { id: getSessionId(session) },
+  const sessionId = getSessionId(session);
+  const { wait } = await openCompletionWaiter(client, sessionId);
+  await client.session.prompt({
+    path: { id: sessionId },
     body: {
       model: { providerID: provider, modelID: model },
       parts: [{ type: "text", text: task.description ?? task.title }],
     },
   });
+  const completed = await wait;
 
-  const usage = extractUsage(response);
-  logger.info("Agent spawned", { sessionId: getSessionId(session), persona: persona.id, task: task.id, tokens: usage.totalTokens });
-  return { sessionId: getSessionId(session), persona, task, usage };
+  const usage = usageFromMessage(completed);
+  logger.info("Agent spawned", { sessionId, persona: persona.id, task: task.id, tokens: usage.totalTokens });
+  return { sessionId, persona, task, usage };
 }
 
 export interface ReviewerOutput {
@@ -616,24 +605,26 @@ export async function spawnReviewer(
     ? config.model.split("/", 2)
     : ["anthropic", config.model];
 
-  const response = await client.session.prompt({
-    path: { id: getSessionId(session) },
+  const sessionId = getSessionId(session);
+  const { wait } = await openCompletionWaiter(client, sessionId);
+  await client.session.prompt({
+    path: { id: sessionId },
     body: {
       model: { providerID: provider, modelID: model },
-      parts: [{ type: "text", text: "Review all changes made in this workspace. Analyze code quality, security, and architecture. Output your structured review." }],
-      format: {
-        type: "json_schema",
-        schema: REVIEW_JSON_SCHEMA,
-      },
+      parts: [{
+        type: "text",
+        text: `Review all changes made in this workspace. Analyze code quality, security, and architecture.\n\nOutput ONLY valid JSON (no prose, no markdown fences) matching this schema:\n${JSON.stringify(REVIEW_JSON_SCHEMA, null, 2)}`,
+      }],
     },
   });
+  const completed = await wait;
 
-  // Parse the structured review output and extract usage
-  const parsed = extractReviewOutput(response, persona.id);
-  const usage = extractUsage(response);
+  // Parse the structured review output and extract usage from the completed message
+  const parsed = extractReviewOutput(completed.parts, persona.id);
+  const usage = usageFromMessage(completed);
 
   logger.info("Reviewer completed", {
-    sessionId: getSessionId(session),
+    sessionId,
     persona: persona.id,
     score: parsed.score,
     issueCount: parsed.issues.length,
@@ -641,7 +632,7 @@ export async function spawnReviewer(
   });
 
   return {
-    sessionId: getSessionId(session),
+    sessionId,
     persona,
     score: parsed.score,
     issues: parsed.issues,
@@ -654,52 +645,27 @@ export async function spawnReviewer(
  * Falls back to score 0.5 (neutral) with empty issues on parse failure.
  */
 function extractReviewOutput(
-  response: unknown,
+  parts: MessagePart[],
   reviewerId: string,
 ): { score: number; issues: ReviewerOutput["issues"] } {
-  let res = response as Record<string, unknown> | null;
   const fallback = { score: 0.5, issues: [] as ReviewerOutput["issues"] };
 
-  if (!res) {
-    logger.warn("Reviewer returned null response", { reviewerId });
+  if (!Array.isArray(parts) || parts.length === 0) {
+    logger.warn("Reviewer returned empty parts", { reviewerId });
     return fallback;
   }
 
-  // Unwrap SDK wrapper: { data, error, request, response }
-  if (res.data && typeof res.data === "object" && !res.score && !res.parts) {
-    res = res.data as Record<string, unknown>;
+  const text = extractTextFromParts(parts);
+  if (!text) {
+    logger.warn("Reviewer parts contained no text", { reviewerId });
+    return fallback;
   }
 
-  // Try common response shapes (same as planner extraction)
-  let raw: Record<string, unknown> | undefined;
-
-  if (typeof res.content === "string") {
-    try { raw = JSON.parse(res.content); } catch { /* fall through */ }
-  }
-
-  if (!raw && Array.isArray(res.parts)) {
-    for (const part of res.parts) {
-      const p = part as Record<string, unknown>;
-      if (typeof p.text === "string") {
-        try { raw = JSON.parse(p.text); break; } catch { /* fall through */ }
-      }
-    }
-  }
-
-  if (!raw && res.result && typeof res.result === "object") {
-    raw = res.result as Record<string, unknown>;
-  }
-
-  if (!raw && typeof res.score === "number") {
-    raw = res as Record<string, unknown>;
-  }
-
+  const raw = parseJsonFromText<Record<string, unknown>>(text);
   if (!raw) {
-    logger.warn("Could not parse reviewer response", {
+    logger.warn("Could not parse reviewer JSON", {
       reviewerId,
-      responseKeys: Object.keys(res),
-      error: res.error ? JSON.stringify(res.error).slice(0, 500) : undefined,
-      response: res.response ? JSON.stringify(res.response).slice(0, 500) : undefined,
+      textPreview: text.slice(0, 300),
     });
     return fallback;
   }

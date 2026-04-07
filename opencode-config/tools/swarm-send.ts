@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { tool } from "@opencode-ai/plugin";
 import { writeFile, mkdir } from "fs/promises";
 import { randomUUID } from "crypto";
@@ -10,23 +11,12 @@ export default tool({
   description:
     "Send a message to another agent in the swarm. Messages are stored as individual JSON files and can be read by the target agent using swarm-receive.",
   args: {
-    from: {
-      type: "string",
-      description: "The sending agent's identifier (your SWARM_AGENT_ID)",
-    },
-    to: {
-      type: "string",
-      description: "The target agent's identifier (e.g., backend-dev, frontend-dev)",
-    },
-    message: {
-      type: "string",
-      description: "The message content to send",
-    },
-    priority: {
-      type: "string",
-      description: '"normal" or "urgent"',
-      default: "normal",
-    },
+    from: z.string().describe("The sending agent's identifier (your SWARM_AGENT_ID)"),
+    to: z
+      .string()
+      .describe("The target agent's identifier (e.g., backend-dev, frontend-dev)"),
+    message: z.string().describe("The message content to send"),
+    priority: z.string().default("normal").describe('"normal" or "urgent"'),
   },
   async execute(args) {
     const priority = args.priority === "urgent" ? "urgent" : "normal";
@@ -49,16 +39,16 @@ export default tool({
       const filePath = `${pendingDir}/${id}.json`;
       await writeFile(filePath, JSON.stringify(entry, null, 2));
 
-      return {
+      return JSON.stringify({
         success: true,
         messageId: entry.id,
         delivered: filePath,
-      };
+      });
     } catch (err: any) {
-      return {
+      return JSON.stringify({
         success: false,
         error: err.message ?? String(err),
-      };
+      });
     }
   },
 });

@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { tool } from "@opencode-ai/plugin";
 
 const MEM0_API_URL = process.env.MEM0_API_URL ?? "http://localhost:8080";
@@ -8,21 +9,15 @@ export default tool({
   description:
     'Search Mem0 for memories from this swarm run. Use scope "own" to see only your memories, or "all" to see memories from all agents in this run.',
   args: {
-    query: {
-      type: "string",
-      description: "Natural language search query",
-    },
-    scope: {
-      type: "string",
-      description:
-        '"own" = only your memories, "all" = all agents in this run',
-      default: "own",
-    },
-    limit: {
-      type: "number",
-      description: "Maximum number of results to return",
-      default: 10,
-    },
+    query: z.string().describe("Natural language search query"),
+    scope: z
+      .string()
+      .default("own")
+      .describe('"own" = only your memories, "all" = all agents in this run'),
+    limit: z
+      .number()
+      .default(10)
+      .describe("Maximum number of results to return"),
   },
   async execute(args) {
     const scope = args.scope === "all" ? "all" : "own";
@@ -48,10 +43,10 @@ export default tool({
 
       if (!response.ok) {
         const body = await response.text();
-        return {
+        return JSON.stringify({
           success: false,
           error: `Mem0 API returned ${response.status}: ${body.slice(0, 200)}`,
-        };
+        });
       }
 
       const results = await response.json();
@@ -59,7 +54,7 @@ export default tool({
         ? results
         : results.results ?? results.memories ?? [];
 
-      return {
+      return JSON.stringify({
         success: true,
         scope,
         query: args.query,
@@ -72,13 +67,13 @@ export default tool({
           score: m.score ?? m.relevance,
           timestamp: m.metadata?.timestamp ?? m.created_at,
         })),
-      };
+      });
     } catch (err: any) {
-      return {
+      return JSON.stringify({
         success: false,
         error: `Mem0 unavailable: ${err.message ?? String(err)}`,
         hint: "Is the Mem0 server running? Check MEM0_API_URL env var.",
-      };
+      });
     }
   },
 });

@@ -1,5 +1,6 @@
+import { z } from "zod";
 import { tool } from "@opencode-ai/plugin";
-import { readFile, readdir, mkdir, rename } from "fs/promises";
+import { readFile, readdir, rename } from "fs/promises";
 import { existsSync, mkdirSync } from "fs";
 
 const MESSAGES_DIR = process.env.SWARM_STATE_PATH
@@ -22,16 +23,14 @@ export default tool({
   description:
     "Read pending messages for the current agent. Returns unread messages and optionally moves them to the read directory. Use this to check if other agents have sent you handoff requests, blockers, or context.",
   args: {
-    acknowledge: {
-      type: "boolean",
-      description: "If true, mark returned messages as read (default: true)",
-      default: true,
-    },
-    filter_priority: {
-      type: "string",
-      description: 'Only return messages with this priority: "urgent", "normal", or "all"',
-      default: "all",
-    },
+    acknowledge: z
+      .boolean()
+      .default(true)
+      .describe("If true, mark returned messages as read (default: true)"),
+    filter_priority: z
+      .string()
+      .default("all")
+      .describe('Only return messages with this priority: "urgent", "normal", or "all"'),
   },
   async execute(args) {
     const ack = args.acknowledge !== false;
@@ -40,23 +39,23 @@ export default tool({
 
     try {
       if (!existsSync(pendingDir)) {
-        return {
+        return JSON.stringify({
           success: true,
           agent: AGENT_ID,
           count: 0,
           messages: [],
-        };
+        });
       }
 
       const files = (await readdir(pendingDir)).filter(f => f.endsWith(".json"));
 
       if (files.length === 0) {
-        return {
+        return JSON.stringify({
           success: true,
           agent: AGENT_ID,
           count: 0,
           messages: [],
-        };
+        });
       }
 
       const allMessages: Message[] = [];
@@ -75,12 +74,12 @@ export default tool({
         : allMessages.filter(m => m.priority === filterPriority);
 
       if (pending.length === 0) {
-        return {
+        return JSON.stringify({
           success: true,
           agent: AGENT_ID,
           count: 0,
           messages: [],
-        };
+        });
       }
 
       // Move to read/ directory if acknowledging
@@ -99,7 +98,7 @@ export default tool({
         }
       }
 
-      return {
+      return JSON.stringify({
         success: true,
         agent: AGENT_ID,
         count: pending.length,
@@ -110,12 +109,12 @@ export default tool({
           priority: m.priority,
           timestamp: m.timestamp,
         })),
-      };
+      });
     } catch (err: any) {
-      return {
+      return JSON.stringify({
         success: false,
         error: err.message ?? String(err),
-      };
+      });
     }
   },
 });

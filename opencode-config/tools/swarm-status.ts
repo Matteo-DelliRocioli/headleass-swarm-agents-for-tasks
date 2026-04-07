@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { tool } from "@opencode-ai/plugin";
 import { readFile } from "fs/promises";
 import { existsSync } from "fs";
@@ -11,16 +12,16 @@ export default tool({
 
     try {
       if (!existsSync(statePath)) {
-        return {
+        return JSON.stringify({
           success: false,
           error: `Swarm state file not found at ${statePath}. The orchestrator may not have initialized yet.`,
-        };
+        });
       }
 
       const raw = await readFile(statePath, "utf-8");
       const state = JSON.parse(raw);
 
-      return {
+      return JSON.stringify({
         success: true,
         activeAgents: state.activeAgents ?? [],
         tasks: state.tasks ?? {},
@@ -28,12 +29,12 @@ export default tool({
         fileLocks: state.fileLocks ?? {},
         pendingMessages: state.pendingMessages ?? {},
         raw: state,
-      };
+      });
     } catch (err: any) {
-      return {
+      return JSON.stringify({
         success: false,
         error: err.message ?? String(err),
-      };
+      });
     }
   },
 });
