@@ -46,7 +46,7 @@ export interface AgentDeps {
   ) => Persona | undefined;
   spawnPlanner: (persona: Persona, prompt: string, config: OrchestratorConfig) => Promise<PlannerSession>;
   reviewPlan: (plan: PlannerOutput, reviewer: Persona, config: OrchestratorConfig) => Promise<PlanReviewResult>;
-  revisePlan: (sessionId: string, review: PlanReviewResult, iteration: number, config: OrchestratorConfig) => Promise<PlannerOutput>;
+  revisePlan: (sessionId: string, review: PlanReviewResult, iteration: number, config: OrchestratorConfig, plannerPersona?: Persona) => Promise<PlannerOutput>;
   spawnAgent: (persona: Persona, task: { id: string; title: string; status: string; priority: number; description?: string; assignee?: string }, config: OrchestratorConfig) => Promise<SpawnResult>;
   spawnReviewer: (persona: Persona, loop: number, config: OrchestratorConfig) => Promise<{ score: number; issues: Array<{ severity: string; description: string; file?: string; line?: number }>; usage: UsageData }>;
   aggregateReviews: (reviews: ReviewResult[]) => AggregatedReview;
@@ -257,6 +257,7 @@ export async function runOrchestrator(
             review,
             planLoop,
             config,
+            plannerPersona,
           );
 
           if (currentPlan.tasks.length === 0) break;

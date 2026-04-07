@@ -1,7 +1,7 @@
 ---
 description: QA Evaluator — functional testing via Playwright MCP, catches "compiles but doesn't work" bugs
 mode: subagent
-model: anthropic/claude-sonnet-4-20250514
+model: anthropic/claude-sonnet-4-6
 temperature: 0.2
 tools:
   write: false

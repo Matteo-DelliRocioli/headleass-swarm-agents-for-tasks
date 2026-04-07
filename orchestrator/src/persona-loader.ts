@@ -11,6 +11,8 @@ export interface Persona {
   description: string; // from YAML frontmatter
   isReviewer: boolean; // tools.write === false
   content: string;     // full file content
+  model?: string;      // from frontmatter, e.g. "anthropic/claude-opus-4-6"
+  temperature?: number; // from frontmatter, optional
 }
 
 export async function loadPersonas(personasPath: string): Promise<Map<string, Persona>> {
@@ -26,12 +28,17 @@ export async function loadPersonas(personasPath: string): Promise<Map<string, Pe
       const description = extractFrontmatter(content, "description") ?? id;
       const writeDisabled = extractFrontmatter(content, "write") === "false";
       const editDisabled = extractFrontmatter(content, "edit") === "false";
+      const model = extractFrontmatter(content, "model");
+      const temperatureStr = extractFrontmatter(content, "temperature");
+      const temperature = temperatureStr ? parseFloat(temperatureStr) : undefined;
 
       personas.set(id, {
         id,
         description,
         isReviewer: writeDisabled && editDisabled,
         content,
+        model,
+        temperature: Number.isFinite(temperature) ? temperature : undefined,
       });
     }
   } catch (err) {
@@ -42,6 +49,7 @@ export async function loadPersonas(personasPath: string): Promise<Map<string, Pe
     count: personas.size,
     ids: [...personas.keys()],
     reviewers: [...personas.values()].filter(p => p.isReviewer).map(p => p.id),
+    models: Object.fromEntries([...personas.values()].map(p => [p.id, p.model ?? "(default)"])),
   });
 
   return personas;

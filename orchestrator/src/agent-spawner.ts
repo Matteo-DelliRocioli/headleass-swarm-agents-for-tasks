@@ -86,6 +86,25 @@ function usageFromMessage(completed: CompletedMessage): UsageData {
 }
 
 /**
+ * Resolve which model to use for a persona. Priority:
+ * 1. Persona's `model` frontmatter field
+ * 2. Falls back to config.model (the global SWARM_MODEL env var)
+ *
+ * Returns { providerID, modelID } parsed from "provider/model" format.
+ */
+function resolveModel(
+  persona: Persona,
+  config: OrchestratorConfig,
+): { providerID: string; modelID: string } {
+  const modelStr = persona.model ?? config.model;
+  if (modelStr.includes("/")) {
+    const [providerID, modelID] = modelStr.split("/", 2);
+    return { providerID, modelID };
+  }
+  return { providerID: "anthropic", modelID: modelStr };
+}
+
+/**
  * Build the context string injected into each agent session.
  * Includes: task details, roster of active agents, swarm rules.
  */
@@ -210,9 +229,7 @@ export async function spawnPlanner(
 
   // Send the decomposition prompt — use agent + system fields to invoke the
   // planner persona properly (no more noReply context injection hack).
-  const [provider, model] = config.model.includes("/")
-    ? config.model.split("/", 2)
-    : ["anthropic", config.model];
+  const { providerID, modelID } = resolveModel(persona, config);
 
   const systemPrompt = `${persona.content}
 
@@ -237,7 +254,7 @@ export async function spawnPlanner(
   await client.session.prompt({
     path: { id: sessionId },
     body: {
-      model: { providerID: provider, modelID: model },
+      model: { providerID, modelID },
       agent: persona.id,
       system: systemPrompt,
       parts: [{
@@ -322,9 +339,7 @@ export async function reviewPlan(
 
   const planJson = JSON.stringify(plan, null, 2);
 
-  const [provider, model] = config.model.includes("/")
-    ? config.model.split("/", 2)
-    : ["anthropic", config.model];
+  const { providerID, modelID } = resolveModel(reviewerPersona, config);
 
   const sessionId = getSessionId(session);
 
@@ -340,7 +355,7 @@ export async function reviewPlan(
   await client.session.prompt({
     path: { id: sessionId },
     body: {
-      model: { providerID: provider, modelID: model },
+      model: { providerID, modelID },
       agent: reviewerPersona.id,
       system: systemPrompt,
       parts: [{
@@ -427,6 +442,7 @@ export async function revisePlan(
   review: PlanReviewResult,
   iteration: number,
   config: OrchestratorConfig,
+  plannerPersona?: Persona,
 ): Promise<PlannerOutput> {
   const client = await getClient(config);
 
@@ -436,15 +452,18 @@ export async function revisePlan(
 
   logger.info("Requesting plan revision", { iteration, score: review.score, issueCount: review.issues.length });
 
-  const [provider, model] = config.model.includes("/")
-    ? config.model.split("/", 2)
-    : ["anthropic", config.model];
+  // Use planner persona's model if available, else fall back to config
+  const { providerID, modelID } = plannerPersona
+    ? resolveModel(plannerPersona, config)
+    : (config.model.includes("/")
+        ? { providerID: config.model.split("/", 2)[0], modelID: config.model.split("/", 2)[1] }
+        : { providerID: "anthropic", modelID: config.model });
 
   const { wait } = await openCompletionWaiter(client, plannerSessionId);
   await client.session.prompt({
     path: { id: plannerSessionId },
     body: {
-      model: { providerID: provider, modelID: model },
+      model: { providerID, modelID },
       agent: "planner-agent",
       parts: [{
         type: "text",
@@ -545,15 +564,13 @@ export async function spawnAgent(
 ${context}`;
 
   // Send the actual task prompt with agent + system fields
-  const [provider, model] = config.model.includes("/")
-    ? config.model.split("/", 2)
-    : ["anthropic", config.model];
+  const { providerID, modelID } = resolveModel(persona, config);
 
   const { wait } = await openCompletionWaiter(client, sessionId);
   await client.session.prompt({
     path: { id: sessionId },
     body: {
-      model: { providerID: provider, modelID: model },
+      model: { providerID, modelID },
       agent: persona.id,
       system: systemPrompt,
       parts: [{ type: "text", text: task.description ?? task.title }],
@@ -645,15 +662,13 @@ ${memoryContext}
 5. If your final message is not valid JSON, your review is recorded as score 0.5 with no issues (the fallback)`;
 
   // Request structured review output via agent + system fields
-  const [provider, model] = config.model.includes("/")
-    ? config.model.split("/", 2)
-    : ["anthropic", config.model];
+  const { providerID, modelID } = resolveModel(persona, config);
 
   const { wait } = await openCompletionWaiter(client, sessionId);
   await client.session.prompt({
     path: { id: sessionId },
     body: {
-      model: { providerID: provider, modelID: model },
+      model: { providerID, modelID },
       agent: persona.id,
       system: systemPrompt,
       parts: [{

@@ -1,7 +1,7 @@
 ---
 description: Test specialist — unit, integration, and e2e test writer
 mode: subagent
-model: anthropic/claude-sonnet-4-20250514
+model: anthropic/claude-haiku-4-5
 temperature: 0.3
 tools:
   read: true

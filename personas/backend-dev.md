@@ -1,7 +1,7 @@
 ---
 description: Backend development specialist — APIs, databases, server-side logic
 mode: subagent
-model: anthropic/claude-sonnet-4-20250514
+model: anthropic/claude-sonnet-4-6
 temperature: 0.4
 tools:
   write: true

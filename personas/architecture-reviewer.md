@@ -1,7 +1,7 @@
 ---
 description: Architecture review agent — separation of concerns, dependencies, scalability
 mode: subagent
-model: anthropic/claude-sonnet-4-20250514
+model: anthropic/claude-sonnet-4-6
 temperature: 0.1
 tools:
   write: false

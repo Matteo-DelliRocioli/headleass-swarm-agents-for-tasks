@@ -1,7 +1,7 @@
 ---
 description: Code quality review agent — smells, maintainability, test coverage
 mode: subagent
-model: anthropic/claude-sonnet-4-20250514
+model: anthropic/claude-haiku-4-5
 temperature: 0.1
 tools:
   write: false

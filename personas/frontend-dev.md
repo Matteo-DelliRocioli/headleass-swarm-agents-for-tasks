@@ -1,7 +1,7 @@
 ---
 description: Frontend development specialist — React, TypeScript, CSS, UI/UX
 mode: subagent
-model: anthropic/claude-sonnet-4-20250514
+model: anthropic/claude-sonnet-4-6
 temperature: 0.4
 tools:
   write: true
