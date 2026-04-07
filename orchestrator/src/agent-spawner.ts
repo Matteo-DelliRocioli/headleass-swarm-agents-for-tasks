@@ -716,38 +716,71 @@ export async function spawnReviewer(
     // Mem0 unavailable — proceed without shared memory
   }
 
-  // Build system prompt with persona instructions + shared memory
+  // qa-evaluator is fundamentally different from the static reviewers — it
+  // needs to actually start the app and test it functionally, not just inspect
+  // the diff. Branch on persona id to send the right prompt and timeout.
+  const isFunctionalReviewer = persona.id === "qa-evaluator";
+
+  const submitInstructions = `## How to Submit Your Review
+You MUST call the \`submit_review\` tool with your structured assessment as the FINAL action.
+The tool's args ARE the review (score + issues). Do not also output JSON in your message text.
+The orchestrator reads the tool's structured args directly — message text is ignored.`;
+
+  const staticReviewerRules = `## Efficiency Rules (CRITICAL — to avoid timeout)
+- Use \`bash: git diff HEAD~1\` to see ONLY the changes made in the last commit
+- Do NOT read every file in /workspace — read only the files that changed
+- Do NOT use glob or grep to enumerate the whole tree
+- Spend at most 2-3 tool calls before submitting your review`;
+
+  const qaEvaluatorRules = `## Functional Testing Rules (you are the ONLY reviewer that runs the app)
+- Read package.json to find the start/dev script
+- Start the app in BACKGROUND with bash (e.g. \`PORT=3999 nohup node src/app.js > /tmp/app.log 2>&1 & echo $!\`)
+- IMPORTANT: use a NON-STANDARD port (3999 or higher) to avoid collisions
+- Wait for readiness: \`sleep 2 && curl -sf http://localhost:3999/health\` (or appropriate path)
+- Test the changed endpoints with curl: capture HTTP status codes and response bodies
+- Test the homepage: \`curl -sI http://localhost:3999/\` — should return 200 with Content-Type: text/html
+- KILL the server when done: \`kill <PID>\` (use the PID you saved when starting)
+- Score 0.0-0.1 if app fails to start, 0.2-0.4 if core feature broken, 0.6-0.8 if minor issues, 0.9-1.0 if all tests pass
+- Read /tmp/app.log if you need to see the server's stderr after a failure
+- You have 10 minutes — use them. Static code review is NOT your job; the other reviewers do that.`;
+
+  const reviewerRules = isFunctionalReviewer ? qaEvaluatorRules : staticReviewerRules;
+
+  // Build system prompt with persona instructions + shared memory + role-specific rules
   const systemPrompt = `${persona.content}
 
 You are reviewing loop ${loopNumber} of a swarm run. The implementation agents have made changes to /workspace.
 
 ${memoryContext}
 
-## How to Submit Your Review
-You MUST call the \`submit_review\` tool with your structured assessment as the FINAL action.
-The tool's args ARE the review (score + issues). Do not also output JSON in your message text.
-The orchestrator reads the tool's structured args directly — message text is ignored.
+${submitInstructions}
 
-## Efficiency Rules (CRITICAL — to avoid timeout)
-- Use \`bash: git diff HEAD~1\` to see ONLY the changes made in the last commit
-- Do NOT read every file in /workspace — read only the files that changed
-- Do NOT use glob or grep to enumerate the whole tree
-- Spend at most 2-3 tool calls before submitting your review`;
+${reviewerRules}`;
 
   // Request structured review output via agent + system fields
   const { providerID, modelID } = resolveModel(persona, config);
 
-  // Use shorter timeout for reviewers (5 min) — they should be focused
-  const { wait } = await openCompletionWaiter(client, sessionId, 5 * 60 * 1000);
-  await client.session.prompt({
-    path: { id: sessionId },
-    body: {
-      model: { providerID, modelID },
-      agent: persona.id,
-      system: systemPrompt,
-      parts: [{
-        type: "text",
-        text: `Review the changes from this loop.
+  // Static reviewers: 5 min. qa-evaluator: 10 min (needs to start the app, test endpoints, clean up)
+  const reviewerTimeoutMs = isFunctionalReviewer ? 10 * 60 * 1000 : 5 * 60 * 1000;
+  const { wait } = await openCompletionWaiter(client, sessionId, reviewerTimeoutMs);
+
+  const userPrompt = isFunctionalReviewer
+    ? `Run the application and test the changed features.
+
+## Steps
+1. \`cat package.json\` — find the start script
+2. \`git log --oneline -3\` and \`git diff HEAD~1\` (or HEAD if only one commit) — see what changed
+3. Start the app in background on PORT=3999 (or whatever doesn't collide). Capture the PID.
+4. Wait for readiness (sleep 2 then curl the health endpoint with --retry 5 --retry-delay 1)
+5. Test EACH changed endpoint with curl. Capture status codes + response previews.
+6. Smoke-test the homepage (\`curl -sI\` for headers, \`curl -s | head -20\` for body)
+7. Kill the server: \`kill <pid>\`
+8. Call \`submit_review\` with your assessment + evidence
+
+If the app fails to start, that's a critical issue with score ≤ 0.1 — submit immediately, don't try to fix it.
+If endpoints return 4xx/5xx unexpectedly, that's a critical/high issue with score ≤ 0.4.
+If everything works, score 0.95.`
+    : `Review the changes from this loop.
 
 ## How to be efficient
 1. Run \`git diff HEAD~1\` (or \`git diff HEAD\` if there's only one commit) to see ONLY the changes
@@ -756,8 +789,15 @@ The orchestrator reads the tool's structured args directly — message text is i
 
 Do NOT explore the whole workspace. Focus on what changed.
 Do NOT output JSON in your message text — call the tool instead.
-Your review will be submitted via the tool's args (score + issues).`,
-      }],
+Your review will be submitted via the tool's args (score + issues).`;
+
+  await client.session.prompt({
+    path: { id: sessionId },
+    body: {
+      model: { providerID, modelID },
+      agent: persona.id,
+      system: systemPrompt,
+      parts: [{ type: "text", text: userPrompt }],
     },
   });
   const completed = await wait;
