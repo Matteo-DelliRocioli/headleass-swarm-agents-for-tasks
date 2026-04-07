@@ -81,23 +81,33 @@ export function matchPersonaToTask(
     });
   }
 
-  // Priority 2: Keyword matching
+  // Priority 2: Score-based keyword matching (count hits per persona, return highest)
   const text = `${taskTitle} ${taskDescription ?? ""}`.toLowerCase();
   const keywords: Record<string, string[]> = {
-    "frontend-dev": ["frontend", "react", "ui", "css", "component", "page", "layout", "style", "tailwind", "html", "jsx", "tsx", "responsive", "animation"],
-    "backend-dev": ["backend", "api", "server", "auth", "endpoint", "middleware", "route", "rest", "graphql", "websocket", "jwt", "oauth"],
+    "frontend-dev": ["frontend", "react", "ui", "css", "component", "page", "layout", "style", "tailwind", "html", "jsx", "tsx", "responsive", "animation", "homepage", "view"],
+    "backend-dev": ["backend", "api", "server", "auth", "endpoint", "middleware", "route", "rest", "graphql", "websocket", "jwt", "oauth", "express", "fastify"],
     "devops-agent": ["docker", "dockerfile", "ci", "cd", "pipeline", "deploy", "kubernetes", "k8s", "github actions", "workflow", "nginx", "terraform", "helm", "infra"],
     "test-writer": ["test", "testing", "spec", "jest", "vitest", "playwright", "e2e", "integration test", "unit test", "coverage", "assert"],
     "database-specialist": ["database", "schema", "migration", "sql", "query", "index", "table", "postgres", "mysql", "mongodb", "orm", "prisma", "drizzle", "knex"],
   };
 
+  // Score each candidate by counting keyword matches
+  const scores: Array<{ persona: Persona; score: number }> = [];
   for (const persona of candidates) {
     const personaKeywords = keywords[persona.id] ?? [];
-    if (personaKeywords.some(kw => text.includes(kw))) {
-      return persona;
+    const score = personaKeywords.reduce((acc, kw) => acc + (text.includes(kw) ? 1 : 0), 0);
+    if (score > 0) {
+      scores.push({ persona, score });
     }
   }
 
-  // No match — caller must handle (fail-fast)
-  return undefined;
+  if (scores.length === 0) {
+    // No keyword match — caller must handle (fail-fast)
+    return undefined;
+  }
+
+  // Sort by score descending, return highest. Ties broken by candidate order
+  // (which is reproducible across runs since candidates is the filtered Map order).
+  scores.sort((a, b) => b.score - a.score);
+  return scores[0].persona;
 }

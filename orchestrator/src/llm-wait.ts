@@ -51,17 +51,22 @@ export interface OpenCodeClientLike {
 }
 
 /**
- * Open an SSE event stream and return a Promise that resolves when an
- * assistant message in the given session reaches `time.completed`.
+ * Open an SSE event stream and return a Promise that resolves when the
+ * given session emits `session.idle` (the agent has finished all its work).
+ *
+ * Why session.idle instead of message.updated:
+ * The agent may emit several intermediate `message.updated` events with
+ * `time.completed` set (e.g., a brief "I'll explore..." then tool calls
+ * then more text). We need the FINAL state, which is signaled by
+ * `session.idle` — no more pending work.
  *
  * IMPORTANT: Call this BEFORE sending the prompt, then send the prompt,
- * then await the returned promise. Otherwise the completion event may
- * be missed.
+ * then await the returned promise. Otherwise the idle event may be missed.
  *
  * Usage:
  *   const { wait } = await openCompletionWaiter(client, sessionId, 600_000);
  *   await client.session.prompt({ ... });   // fire-and-forget
- *   const completed = await wait;            // resolves with assistant message
+ *   const completed = await wait;            // resolves with last assistant message
  */
 export async function openCompletionWaiter(
   client: OpenCodeClientLike,
@@ -83,58 +88,70 @@ export async function openCompletionWaiter(
             properties?: { info?: any; sessionID?: string };
           };
 
-          // Match completed assistant message in our session
+          // Wait for session to go idle (all work done)
           if (
-            event.type === "message.updated" &&
-            event.properties?.info?.sessionID === sessionId &&
-            event.properties.info.role === "assistant" &&
-            event.properties.info.time?.completed
+            event.type === "session.idle" &&
+            event.properties?.sessionID === sessionId
           ) {
-            const info = event.properties.info;
-
-            // Check for LLM-level errors (auth, rate limit, output length, etc.)
-            if (info.error) {
-              clearTimeout(timer);
-              reject(new Error(`LLM error in session ${sessionId}: ${JSON.stringify(info.error).slice(0, 300)}`));
-              return;
-            }
-
-            // Fetch full parts via REST (event has metadata only)
-            let parts: MessagePart[] = [];
+            // Fetch all messages and find the last assistant message
             try {
               const messagesResp = await client.session.messages({ path: { id: sessionId } });
               const messagesData = unwrapSDKResponse(messagesResp) as Array<{ info?: any; parts?: MessagePart[] }> | undefined;
-              const fullMessage = Array.isArray(messagesData)
-                ? messagesData.find((m) => m?.info?.id === info.id)
-                : undefined;
-              parts = fullMessage?.parts ?? [];
-            } catch (err) {
-              logger.warn("Failed to fetch message parts after completion", {
-                sessionId,
-                messageId: info.id,
-                error: String(err),
-              });
-            }
 
-            clearTimeout(timer);
-            resolve({
-              id: info.id,
-              sessionID: sessionId,
-              role: "assistant",
-              parts,
-              tokens: info.tokens ?? {
-                input: 0,
-                output: 0,
-                reasoning: 0,
-                cache: { read: 0, write: 0 },
-              },
-              cost: info.cost ?? 0,
-              finish: info.finish,
-            });
-            return;
+              if (!Array.isArray(messagesData) || messagesData.length === 0) {
+                clearTimeout(timer);
+                reject(new Error(`Session ${sessionId} idle but no messages found`));
+                return;
+              }
+
+              // Find the last assistant message
+              let lastAssistant: { info?: any; parts?: MessagePart[] } | undefined;
+              for (let i = messagesData.length - 1; i >= 0; i--) {
+                if (messagesData[i]?.info?.role === "assistant") {
+                  lastAssistant = messagesData[i];
+                  break;
+                }
+              }
+
+              if (!lastAssistant?.info) {
+                clearTimeout(timer);
+                reject(new Error(`Session ${sessionId} idle but no assistant message found`));
+                return;
+              }
+
+              const info = lastAssistant.info;
+
+              // Check for LLM-level errors
+              if (info.error) {
+                clearTimeout(timer);
+                reject(new Error(`LLM error in session ${sessionId}: ${JSON.stringify(info.error).slice(0, 300)}`));
+                return;
+              }
+
+              clearTimeout(timer);
+              resolve({
+                id: info.id,
+                sessionID: sessionId,
+                role: "assistant",
+                parts: lastAssistant.parts ?? [],
+                tokens: info.tokens ?? {
+                  input: 0,
+                  output: 0,
+                  reasoning: 0,
+                  cache: { read: 0, write: 0 },
+                },
+                cost: info.cost ?? 0,
+                finish: info.finish,
+              });
+              return;
+            } catch (err) {
+              clearTimeout(timer);
+              reject(err instanceof Error ? err : new Error(String(err)));
+              return;
+            }
           }
 
-          // Session-level errors (separate from per-message errors)
+          // Session-level errors (separate from idle)
           if (
             event.type === "session.error" &&
             event.properties?.sessionID === sessionId
@@ -145,9 +162,9 @@ export async function openCompletionWaiter(
           }
         }
 
-        // Stream ended without seeing the completion
+        // Stream ended without seeing idle
         clearTimeout(timer);
-        reject(new Error(`Event stream ended without completion (session ${sessionId})`));
+        reject(new Error(`Event stream ended without session idle (session ${sessionId})`));
       } catch (err) {
         clearTimeout(timer);
         reject(err instanceof Error ? err : new Error(String(err)));

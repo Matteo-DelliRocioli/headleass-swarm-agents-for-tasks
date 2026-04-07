@@ -23,6 +23,13 @@ import {
 // Note: session.prompt() is fire-and-forget in OpenCode v1.x. The actual
 // LLM response comes via SSE events on /event. See llm-wait.ts for the
 // completion-waiting helper.
+// Part types for prompts. OpenCode v1.x supports text, agent (@mention), and
+// subtask (delegated subagent invocation).
+type PromptPart =
+  | { type: "text"; text: string }
+  | { type: "agent"; name: string }
+  | { type: "subtask"; prompt: string; description: string; agent: string };
+
 type OpenCodeClient = {
   session: {
     create: (opts: { body: { title: string } }) => Promise<unknown>;
@@ -30,9 +37,11 @@ type OpenCodeClient = {
       path: { id: string };
       body: {
         model?: { providerID: string; modelID: string };
-        parts: Array<{ type: string; text: string }>;
+        agent?: string;        // selects which persona to use
+        system?: string;       // system prompt (replaces noReply context injection)
+        tools?: Record<string, boolean>;
+        parts: PromptPart[];
         noReply?: boolean;
-        format?: { type: string; schema?: unknown };
       };
     }) => Promise<unknown>;
     messages: (opts: { path: { id: string } }) => Promise<unknown>;
@@ -197,24 +206,31 @@ export async function spawnPlanner(
     body: { title: sessionTitle },
   });
 
-  // Inject persona context (noReply = don't trigger response yet)
-  await client.session.prompt({
-    path: { id: getSessionId(session) },
-    body: {
-      noReply: true,
-      parts: [{
-        type: "text",
-        text: `## Planner Context\n\n${persona.content}\n\n### Available Personas\nfrontend-dev, backend-dev, devops-agent, test-writer, database-specialist\n\n### Workspace\nExplore /workspace to understand the codebase before planning.`,
-      }],
-    },
-  });
+  const sessionId = getSessionId(session);
 
-  // Send the decomposition prompt with structured output format
+  // Send the decomposition prompt — use agent + system fields to invoke the
+  // planner persona properly (no more noReply context injection hack).
   const [provider, model] = config.model.includes("/")
     ? config.model.split("/", 2)
     : ["anthropic", config.model];
 
-  const sessionId = getSessionId(session);
+  const systemPrompt = `${persona.content}
+
+## Available Personas
+- frontend-dev: React, TypeScript, CSS, HTML, UI/UX
+- backend-dev: APIs, server logic, auth, endpoints
+- database-specialist: Schema, migrations, queries
+- test-writer: Unit, integration, e2e tests
+- devops-agent: Docker, CI/CD, deployment
+
+## Critical Output Rules
+1. You will be given a prompt to decompose into tasks
+2. Explore /workspace using read/glob/grep to understand existing code
+3. Decompose the prompt into 1-12 atomic tasks
+4. Each task MUST have a suggested_persona from the list above
+5. For prompts spanning multiple domains (e.g., backend + HTML), CREATE SEPARATE TASKS
+6. YOUR FINAL MESSAGE MUST CONTAIN ONLY VALID JSON — no prose, no markdown, no preamble
+7. The orchestrator will parse your final message as JSON. If it fails, the run fails.`;
 
   // Open SSE waiter BEFORE sending the prompt to avoid missing the completion event
   const { wait } = await openCompletionWaiter(client, sessionId);
@@ -222,9 +238,21 @@ export async function spawnPlanner(
     path: { id: sessionId },
     body: {
       model: { providerID: provider, modelID: model },
+      agent: persona.id,
+      system: systemPrompt,
       parts: [{
         type: "text",
-        text: `Decompose this prompt into implementation tasks:\n\n---\n${initialPrompt}\n---\n\nExplore the workspace first, then output your structured task plan.\n\nOutput ONLY valid JSON matching this schema (no prose, no markdown fences):\n${JSON.stringify(PLANNER_JSON_SCHEMA, null, 2)}`,
+        text: `Decompose this prompt into implementation tasks:
+
+---
+${initialPrompt}
+---
+
+Explore the workspace first (read package.json, glob the directory tree). Then output your final response as a JSON object matching this schema (NO prose, NO markdown fences, JSON ONLY):
+
+${JSON.stringify(PLANNER_JSON_SCHEMA, null, 2)}
+
+Remember: assign distinct domains to distinct personas. If the prompt mentions both backend (API/server) and frontend (HTML/UI) work, create at least two tasks with different suggested_persona.`,
       }],
     },
   });
@@ -299,14 +327,25 @@ export async function reviewPlan(
     : ["anthropic", config.model];
 
   const sessionId = getSessionId(session);
+
+  const systemPrompt = `${reviewerPersona.content}
+
+## Critical Output Rules
+1. You will be given a task decomposition plan to review
+2. Review the plan against the evaluation criteria
+3. YOUR FINAL MESSAGE MUST CONTAIN ONLY VALID JSON — no prose, no markdown, no preamble
+4. The orchestrator will parse your final message as JSON. If it fails, the run continues with default approval.`;
+
   const { wait } = await openCompletionWaiter(client, sessionId);
   await client.session.prompt({
     path: { id: sessionId },
     body: {
       model: { providerID: provider, modelID: model },
+      agent: reviewerPersona.id,
+      system: systemPrompt,
       parts: [{
         type: "text",
-        text: `You are reviewing a task decomposition plan before it goes to implementation agents.
+        text: `Review this task decomposition plan:
 
 ## Available Personas
 frontend-dev, backend-dev, devops-agent, test-writer, database-specialist
@@ -317,17 +356,18 @@ ${planJson}
 \`\`\`
 
 ## Evaluation Criteria
-1. **Task clarity**: Is each task description clear enough for a single agent to implement without follow-up questions?
-2. **Persona fit**: Is each task assigned to the right specialist? (e.g., database work → database-specialist, not frontend-dev)
-3. **Dependencies**: Are dependency edges correct and acyclic? Are missing dependencies that would cause build failures?
-4. **Scope**: Is the decomposition too fine-grained (>12 tasks) or too coarse (single task for complex work)?
-5. **Completeness**: Does the plan cover the full prompt, or are parts missing?
-6. **Priority**: Are priorities sensible? Critical path items should be P0/P1.
+1. **Task clarity**: clear enough for a single agent to implement without follow-up?
+2. **Persona fit**: right specialist? (database work → database-specialist, not frontend-dev)
+3. **Dependencies**: correct and acyclic? any missing that would cause build failures?
+4. **Scope**: too fine-grained (>12 tasks) or too coarse (single task for complex work)?
+5. **Completeness**: covers the full prompt?
+6. **Priority**: sensible? critical path items P0/P1?
+7. **Domain separation**: backend and frontend work in SEPARATE tasks?
 
-Score 0.8+ means the plan is good enough to execute. Below 0.8 means it needs revision.
-Provide specific, actionable feedback referencing task titles.
+Score 0.8+ means good to execute. Below 0.8 needs revision.
 
-Output ONLY valid JSON matching this schema (no prose, no markdown fences):
+Output your final response as JSON matching this schema (NO prose, NO markdown fences, JSON ONLY):
+
 ${JSON.stringify(PLAN_REVIEW_SCHEMA, null, 2)}`,
       }],
     },
@@ -405,6 +445,7 @@ export async function revisePlan(
     path: { id: plannerSessionId },
     body: {
       model: { providerID: provider, modelID: model },
+      agent: "planner-agent",
       parts: [{
         type: "text",
         text: `## Plan Review Feedback (iteration ${iteration})
@@ -418,7 +459,7 @@ ${review.feedback}
 ### Specific Issues
 ${issueList}
 
-Please revise your plan to address this feedback. Output ONLY valid JSON (no prose, no markdown fences) matching the same schema as before.`,
+Revise your plan to address this feedback. YOUR FINAL MESSAGE MUST CONTAIN ONLY VALID JSON (no prose, no markdown fences) matching the same schema as before.`,
       }],
     },
   });
@@ -495,27 +536,26 @@ export async function spawnAgent(
     body: { title: sessionTitle },
   });
 
-  // Inject context (noReply = don't trigger AI response yet)
-  const context = await buildAgentContext(persona, task, config);
-  await client.session.prompt({
-    path: { id: getSessionId(session) },
-    body: {
-      noReply: true,
-      parts: [{ type: "text", text: context }],
-    },
-  });
+  const sessionId = getSessionId(session);
 
-  // Send the actual task prompt
+  // Build the context as a system prompt (replaces noReply injection)
+  const context = await buildAgentContext(persona, task, config);
+  const systemPrompt = `${persona.content}
+
+${context}`;
+
+  // Send the actual task prompt with agent + system fields
   const [provider, model] = config.model.includes("/")
     ? config.model.split("/", 2)
     : ["anthropic", config.model];
 
-  const sessionId = getSessionId(session);
   const { wait } = await openCompletionWaiter(client, sessionId);
   await client.session.prompt({
     path: { id: sessionId },
     body: {
       model: { providerID: provider, modelID: model },
+      agent: persona.id,
+      system: systemPrompt,
       parts: [{ type: "text", text: task.description ?? task.title }],
     },
   });
@@ -578,6 +618,8 @@ export async function spawnReviewer(
     body: { title: sessionTitle },
   });
 
+  const sessionId = getSessionId(session);
+
   // Fetch shared memory to give reviewers context from implementation agents
   const mem0Config: Mem0Config = { apiUrl: config.mem0ApiUrl, runName: config.runName };
   let memoryContext = "";
@@ -588,32 +630,44 @@ export async function spawnReviewer(
     // Mem0 unavailable — proceed without shared memory
   }
 
-  // Inject review context with persona instructions + shared memory
-  await client.session.prompt({
-    path: { id: getSessionId(session) },
-    body: {
-      noReply: true,
-      parts: [{
-        type: "text",
-        text: `## Review Context\n\n${persona.content}\n\nYou are reviewing loop ${loopNumber} of a swarm run.\nReview all changed files in /workspace and provide your assessment.\nOutput your review as JSON with a score (0-1) and issues array.\n\n${memoryContext}`,
-      }],
-    },
-  });
+  // Build system prompt with persona instructions + shared memory
+  const systemPrompt = `${persona.content}
 
-  // Request structured review output
+You are reviewing loop ${loopNumber} of a swarm run. The implementation agents have made changes to /workspace.
+
+${memoryContext}
+
+## Critical Output Rules
+1. Use read/glob/grep to inspect the changed files
+2. Analyze them according to your specialty
+3. YOUR FINAL MESSAGE MUST CONTAIN ONLY VALID JSON — no prose, no markdown, no preamble, no "I'll start by..."
+4. The orchestrator parses your final message as JSON with fields: score (0-1), issues (array)
+5. If your final message is not valid JSON, your review is recorded as score 0.5 with no issues (the fallback)`;
+
+  // Request structured review output via agent + system fields
   const [provider, model] = config.model.includes("/")
     ? config.model.split("/", 2)
     : ["anthropic", config.model];
 
-  const sessionId = getSessionId(session);
   const { wait } = await openCompletionWaiter(client, sessionId);
   await client.session.prompt({
     path: { id: sessionId },
     body: {
       model: { providerID: provider, modelID: model },
+      agent: persona.id,
+      system: systemPrompt,
       parts: [{
         type: "text",
-        text: `Review all changes made in this workspace. Analyze code quality, security, and architecture.\n\nOutput ONLY valid JSON (no prose, no markdown fences) matching this schema:\n${JSON.stringify(REVIEW_JSON_SCHEMA, null, 2)}`,
+        text: `Review all changes made in /workspace. Analyze code quality, security, and architecture according to your role.
+
+Use git log and git diff to see what changed, then read the relevant files.
+
+Output your final response as a JSON object matching this schema (NO prose, NO markdown fences, JSON ONLY):
+
+${JSON.stringify(REVIEW_JSON_SCHEMA, null, 2)}
+
+Example response (this is the EXACT format your final message must match):
+{"score": 0.85, "issues": [{"severity": "medium", "description": "Missing input validation in /api/users", "file": "src/routes/users.js", "line": 42}]}`,
       }],
     },
   });

@@ -48,6 +48,7 @@ export interface BeadsTask {
   priority: number;
   assignee?: string;
   description?: string;
+  type?: string;  // "task" | "epic" | "bug" | etc.
 }
 
 export async function createEpic(title: string, description: string): Promise<string> {
@@ -96,14 +97,18 @@ export async function getReadyTasks(): Promise<BeadsTask[]> {
     const output = await bd(["ready", "--json"]);
     const parsed = JSON.parse(output);
     const items = Array.isArray(parsed) ? parsed : parsed.issues ?? [];
-    return items.map((item: Record<string, unknown>) => ({
-      id: String(item.id ?? item.ID ?? ""),
-      title: String(item.title ?? ""),
-      status: String(item.status ?? "open"),
-      priority: Number(item.priority ?? 2),
-      assignee: item.assignee ? String(item.assignee) : undefined,
-      description: item.description ? String(item.description) : undefined,
-    }));
+    return items
+      .map((item: Record<string, unknown>) => ({
+        id: String(item.id ?? item.ID ?? ""),
+        title: String(item.title ?? ""),
+        status: String(item.status ?? "open"),
+        priority: Number(item.priority ?? 2),
+        assignee: item.assignee ? String(item.assignee) : undefined,
+        description: item.description ? String(item.description) : undefined,
+        type: item.issue_type ? String(item.issue_type) : (item.type ? String(item.type) : undefined),
+      }))
+      // Filter out epics — they're containers, not actionable work
+      .filter((t: BeadsTask) => t.type !== "epic");
   } catch {
     return [];
   }

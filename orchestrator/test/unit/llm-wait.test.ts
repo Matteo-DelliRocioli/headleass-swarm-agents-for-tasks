@@ -107,18 +107,21 @@ describe("parseJsonFromText", () => {
 });
 
 // ---------------------------------------------------------------------------
-// openCompletionWaiter
+// openCompletionWaiter — waits for session.idle event
 // ---------------------------------------------------------------------------
 
 describe("openCompletionWaiter", () => {
   const sessionId = "ses_test123";
 
-  it("resolves when a matching completed assistant message arrives", async () => {
+  it("resolves with the last assistant message when session goes idle", async () => {
     const client = makeMockClient({
       events: [
-        {
-          type: "message.updated",
-          properties: {
+        { type: "session.idle", properties: { sessionID: sessionId } },
+      ],
+      messagesResp: {
+        data: [
+          { info: { id: "msg_user", sessionID: sessionId, role: "user" }, parts: [{ type: "text", text: "hi" }] },
+          {
             info: {
               id: "msg_1",
               sessionID: sessionId,
@@ -127,13 +130,6 @@ describe("openCompletionWaiter", () => {
               tokens: { input: 100, output: 50, reasoning: 0, cache: { read: 0, write: 0 } },
               cost: 0.001,
             },
-          },
-        },
-      ],
-      messagesResp: {
-        data: [
-          {
-            info: { id: "msg_1", sessionID: sessionId },
             parts: [{ type: "text", text: "hello world" }],
           },
         ],
@@ -151,23 +147,15 @@ describe("openCompletionWaiter", () => {
     expect(completed.cost).toBe(0.001);
   });
 
-  it("ignores events from other sessions", async () => {
+  it("ignores idle events from other sessions", async () => {
     const client = makeMockClient({
       events: [
-        {
-          type: "message.updated",
-          properties: {
-            info: {
-              id: "msg_other",
-              sessionID: "ses_OTHER",
-              role: "assistant",
-              time: { created: 1, completed: 2 },
-            },
-          },
-        },
-        {
-          type: "message.updated",
-          properties: {
+        { type: "session.idle", properties: { sessionID: "ses_OTHER" } },
+        { type: "session.idle", properties: { sessionID: sessionId } },
+      ],
+      messagesResp: {
+        data: [
+          {
             info: {
               id: "msg_1",
               sessionID: sessionId,
@@ -176,10 +164,10 @@ describe("openCompletionWaiter", () => {
               tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
               cost: 0,
             },
+            parts: [],
           },
-        },
-      ],
-      messagesResp: { data: [{ info: { id: "msg_1" }, parts: [] }] },
+        ],
+      },
     });
 
     const { wait } = await openCompletionWaiter(client, sessionId, 5000);
@@ -187,84 +175,54 @@ describe("openCompletionWaiter", () => {
     expect(completed.id).toBe("msg_1");
   });
 
-  it("ignores user messages (only waits for assistant)", async () => {
+  it("returns the LAST assistant message (not the first)", async () => {
     const client = makeMockClient({
       events: [
-        {
-          type: "message.updated",
-          properties: {
+        { type: "session.idle", properties: { sessionID: sessionId } },
+      ],
+      messagesResp: {
+        data: [
+          { info: { id: "msg_user", sessionID: sessionId, role: "user" }, parts: [] },
+          {
             info: {
-              id: "msg_user",
-              sessionID: sessionId,
-              role: "user",
-              time: { created: 1, completed: 2 },
-            },
-          },
-        },
-        {
-          type: "message.updated",
-          properties: {
-            info: {
-              id: "msg_assistant",
+              id: "msg_intermediate",
               sessionID: sessionId,
               role: "assistant",
               time: { created: 1, completed: 2 },
-              tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+              tokens: { input: 10, output: 5, reasoning: 0, cache: { read: 0, write: 0 } },
               cost: 0,
             },
+            parts: [{ type: "text", text: "I'll explore..." }],
           },
-        },
-      ],
-      messagesResp: { data: [{ info: { id: "msg_assistant" }, parts: [] }] },
+          {
+            info: {
+              id: "msg_final",
+              sessionID: sessionId,
+              role: "assistant",
+              time: { created: 3, completed: 4 },
+              tokens: { input: 50, output: 100, reasoning: 0, cache: { read: 0, write: 0 } },
+              cost: 0.002,
+            },
+            parts: [{ type: "text", text: '{"done":true}' }],
+          },
+        ],
+      },
     });
 
     const { wait } = await openCompletionWaiter(client, sessionId, 5000);
     const completed = await wait;
-    expect(completed.id).toBe("msg_assistant");
+    expect(completed.id).toBe("msg_final");
+    expect(completed.parts).toEqual([{ type: "text", text: '{"done":true}' }]);
   });
 
-  it("ignores in-progress messages (no time.completed)", async () => {
+  it("rejects when last assistant message has an error field", async () => {
     const client = makeMockClient({
       events: [
-        {
-          type: "message.updated",
-          properties: {
-            info: {
-              id: "msg_progress",
-              sessionID: sessionId,
-              role: "assistant",
-              time: { created: 1 }, // no completed
-            },
-          },
-        },
-        {
-          type: "message.updated",
-          properties: {
-            info: {
-              id: "msg_done",
-              sessionID: sessionId,
-              role: "assistant",
-              time: { created: 1, completed: 2 },
-              tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
-              cost: 0,
-            },
-          },
-        },
+        { type: "session.idle", properties: { sessionID: sessionId } },
       ],
-      messagesResp: { data: [{ info: { id: "msg_done" }, parts: [] }] },
-    });
-
-    const { wait } = await openCompletionWaiter(client, sessionId, 5000);
-    const completed = await wait;
-    expect(completed.id).toBe("msg_done");
-  });
-
-  it("rejects when assistant message has an error field", async () => {
-    const client = makeMockClient({
-      events: [
-        {
-          type: "message.updated",
-          properties: {
+      messagesResp: {
+        data: [
+          {
             info: {
               id: "msg_err",
               sessionID: sessionId,
@@ -272,9 +230,10 @@ describe("openCompletionWaiter", () => {
               time: { created: 1, completed: 2 },
               error: { name: "ProviderAuthError", data: { message: "Invalid API key" } },
             },
+            parts: [],
           },
-        },
-      ],
+        ],
+      },
     });
 
     const { wait } = await openCompletionWaiter(client, sessionId, 5000);
@@ -284,10 +243,7 @@ describe("openCompletionWaiter", () => {
   it("rejects on session.error event", async () => {
     const client = makeMockClient({
       events: [
-        {
-          type: "session.error",
-          properties: { sessionID: sessionId, error: "boom" },
-        },
+        { type: "session.error", properties: { sessionID: sessionId, error: "boom" } },
       ],
     });
 
@@ -296,13 +252,11 @@ describe("openCompletionWaiter", () => {
   });
 
   it("rejects on timeout when no events arrive", async () => {
-    // Stream that yields nothing then ends — wait should hit timeout first
     const client: OpenCodeClientLike = {
       session: { messages: vi.fn().mockResolvedValue({ data: [] }) },
       event: {
         subscribe: vi.fn().mockResolvedValue({
           stream: (async function* () {
-            // Never yields
             await new Promise(() => {});
           })(),
         }),
@@ -313,38 +267,67 @@ describe("openCompletionWaiter", () => {
     await expect(wait).rejects.toThrow(/timeout/i);
   });
 
-  it("rejects when stream ends without completion", async () => {
+  it("rejects when stream ends without idle event", async () => {
     const client = makeMockClient({
       events: [
-        // Some unrelated events
         { type: "session.idle", properties: { sessionID: "ses_OTHER" } },
       ],
     });
 
     const { wait } = await openCompletionWaiter(client, sessionId, 5000);
-    await expect(wait).rejects.toThrow(/ended without completion/i);
+    await expect(wait).rejects.toThrow(/ended without session idle/i);
   });
 
-  it("calls session.messages() with correct path after seeing completion", async () => {
-    const messagesMock = vi.fn().mockResolvedValue({ data: [] });
+  it("rejects when session is idle but no messages exist", async () => {
+    const client = makeMockClient({
+      events: [
+        { type: "session.idle", properties: { sessionID: sessionId } },
+      ],
+      messagesResp: { data: [] },
+    });
+
+    const { wait } = await openCompletionWaiter(client, sessionId, 5000);
+    await expect(wait).rejects.toThrow(/no messages found/i);
+  });
+
+  it("rejects when session is idle but only user messages exist", async () => {
+    const client = makeMockClient({
+      events: [
+        { type: "session.idle", properties: { sessionID: sessionId } },
+      ],
+      messagesResp: {
+        data: [
+          { info: { id: "u1", sessionID: sessionId, role: "user" }, parts: [] },
+        ],
+      },
+    });
+
+    const { wait } = await openCompletionWaiter(client, sessionId, 5000);
+    await expect(wait).rejects.toThrow(/no assistant message/i);
+  });
+
+  it("calls session.messages() with correct path after seeing idle", async () => {
+    const messagesMock = vi.fn().mockResolvedValue({
+      data: [
+        {
+          info: {
+            id: "msg_1",
+            sessionID: sessionId,
+            role: "assistant",
+            time: { created: 1, completed: 2 },
+            tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+            cost: 0,
+          },
+          parts: [],
+        },
+      ],
+    });
     const client: OpenCodeClientLike = {
       session: { messages: messagesMock },
       event: {
         subscribe: vi.fn().mockResolvedValue({
           stream: (async function* () {
-            yield {
-              type: "message.updated",
-              properties: {
-                info: {
-                  id: "msg_1",
-                  sessionID: sessionId,
-                  role: "assistant",
-                  time: { created: 1, completed: 2 },
-                  tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
-                  cost: 0,
-                },
-              },
-            };
+            yield { type: "session.idle", properties: { sessionID: sessionId } };
           })(),
         }),
       },
@@ -357,12 +340,13 @@ describe("openCompletionWaiter", () => {
   });
 
   it("unwraps SDK response wrapper when fetching messages", async () => {
-    // messagesResp wrapped in { data: [...] }
     const client = makeMockClient({
       events: [
-        {
-          type: "message.updated",
-          properties: {
+        { type: "session.idle", properties: { sessionID: sessionId } },
+      ],
+      messagesResp: {
+        data: [
+          {
             info: {
               id: "msg_w",
               sessionID: sessionId,
@@ -371,11 +355,9 @@ describe("openCompletionWaiter", () => {
               tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
               cost: 0,
             },
+            parts: [{ type: "text", text: "wrapped" }],
           },
-        },
-      ],
-      messagesResp: {
-        data: [{ info: { id: "msg_w" }, parts: [{ type: "text", text: "wrapped" }] }],
+        ],
       },
     });
 
@@ -387,22 +369,20 @@ describe("openCompletionWaiter", () => {
   it("handles unwrapped messages response (raw array)", async () => {
     const client = makeMockClient({
       events: [
-        {
-          type: "message.updated",
-          properties: {
-            info: {
-              id: "msg_raw",
-              sessionID: sessionId,
-              role: "assistant",
-              time: { created: 1, completed: 2 },
-              tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
-              cost: 0,
-            },
-          },
-        },
+        { type: "session.idle", properties: { sessionID: sessionId } },
       ],
       messagesResp: [
-        { info: { id: "msg_raw" }, parts: [{ type: "text", text: "raw" }] },
+        {
+          info: {
+            id: "msg_raw",
+            sessionID: sessionId,
+            role: "assistant",
+            time: { created: 1, completed: 2 },
+            tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+            cost: 0,
+          },
+          parts: [{ type: "text", text: "raw" }],
+        },
       ],
     });
 
