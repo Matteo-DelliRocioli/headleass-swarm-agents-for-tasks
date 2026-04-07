@@ -14,6 +14,7 @@
 //
 // ---------------------------------------------------------------------------
 
+import { existsSync } from "node:fs";
 import { logger } from "./logger.js";
 
 export interface MessagePart {
@@ -72,6 +73,7 @@ export async function openCompletionWaiter(
   client: OpenCodeClientLike,
   sessionId: string,
   timeoutMs: number = 600_000,
+  expectedOutputFile?: string,
 ): Promise<{ wait: Promise<CompletedMessage> }> {
   const eventResult = await client.event.subscribe();
 
@@ -82,6 +84,7 @@ export async function openCompletionWaiter(
 
     (async () => {
       try {
+        let idleCount = 0;
         for await (const raw of eventResult.stream) {
           const event = raw as {
             type?: string;
@@ -93,6 +96,19 @@ export async function openCompletionWaiter(
             event.type === "session.idle" &&
             event.properties?.sessionID === sessionId
           ) {
+            idleCount++;
+
+            // If an expected output file was specified, only resolve when it exists.
+            // This handles long multi-step agents that briefly idle between steps.
+            if (expectedOutputFile && !existsSync(expectedOutputFile)) {
+              logger.debug("Session idle but expected output file not present, continuing to wait", {
+                sessionId,
+                expectedOutputFile,
+                idleCount,
+              });
+              continue;
+            }
+
             // Fetch all messages and find the last assistant message
             try {
               const messagesResp = await client.session.messages({ path: { id: sessionId } });
@@ -128,19 +144,39 @@ export async function openCompletionWaiter(
                 return;
               }
 
+              // Sum tokens across all assistant messages in this session, since
+              // multi-step agents emit multiple messages and each has its own counts
+              let totalInput = 0;
+              let totalOutput = 0;
+              let totalReasoning = 0;
+              let totalCacheRead = 0;
+              let totalCacheWrite = 0;
+              let totalCost = 0;
+              for (const m of messagesData) {
+                const t = m?.info?.tokens;
+                if (t) {
+                  totalInput += t.input ?? 0;
+                  totalOutput += t.output ?? 0;
+                  totalReasoning += t.reasoning ?? 0;
+                  totalCacheRead += t.cache?.read ?? 0;
+                  totalCacheWrite += t.cache?.write ?? 0;
+                }
+                totalCost += m?.info?.cost ?? 0;
+              }
+
               clearTimeout(timer);
               resolve({
                 id: info.id,
                 sessionID: sessionId,
                 role: "assistant",
                 parts: lastAssistant.parts ?? [],
-                tokens: info.tokens ?? {
-                  input: 0,
-                  output: 0,
-                  reasoning: 0,
-                  cache: { read: 0, write: 0 },
+                tokens: {
+                  input: totalInput,
+                  output: totalOutput,
+                  reasoning: totalReasoning,
+                  cache: { read: totalCacheRead, write: totalCacheWrite },
                 },
-                cost: info.cost ?? 0,
+                cost: totalCost,
                 finish: info.finish,
               });
               return;
@@ -171,6 +207,12 @@ export async function openCompletionWaiter(
       }
     })();
   });
+
+  // Attach a no-op handler to prevent unhandled-rejection crashes if the
+  // caller abandons the wait promise (e.g., session.prompt() throws before
+  // the caller reaches `await wait`). The original promise is unchanged —
+  // anyone who awaits it still sees the rejection.
+  wait.catch(() => {});
 
   return { wait };
 }

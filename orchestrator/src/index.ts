@@ -84,6 +84,14 @@ async function main(): Promise<void> {
   process.exit(exitCode);
 }
 
+// Safety net for any abandoned promise rejections (should never happen but
+// prevents the orchestrator from crashing mid-loop on a transient issue).
+process.on("unhandledRejection", (reason) => {
+  logger.warn("Unhandled rejection (logged but not fatal)", {
+    reason: reason instanceof Error ? reason.message : String(reason).slice(0, 500),
+  });
+});
+
 main().catch((err) => {
   logger.error("Fatal error", { error: String(err) });
 

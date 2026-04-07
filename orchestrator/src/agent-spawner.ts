@@ -266,8 +266,11 @@ You MUST call the \`submit_plan\` tool with your structured plan as the FINAL ac
 The tool's args ARE the plan. Do not also output JSON in your message text.
 The orchestrator reads the tool's structured args directly — message text is ignored.`;
 
-  // Open SSE waiter BEFORE sending the prompt to avoid missing the completion event
-  const { wait } = await openCompletionWaiter(client, sessionId);
+  // Open SSE waiter BEFORE sending the prompt to avoid missing the completion event.
+  // Pass the expected output file so the wait function knows when the agent is REALLY done
+  // (multi-step agents may emit several intermediate session.idle events).
+  const expectedPlanFile = `${config.swarmStatePath}/plans/${sessionId}.json`;
+  const { wait } = await openCompletionWaiter(client, sessionId, 600_000, expectedPlanFile);
   await client.session.prompt({
     path: { id: sessionId },
     body: {
@@ -386,7 +389,8 @@ You MUST call the \`submit_plan_review\` tool with your structured assessment as
 The tool's args ARE the review. Do not also output JSON in your message text.
 The orchestrator reads the tool's structured args directly — message text is ignored.`;
 
-  const { wait } = await openCompletionWaiter(client, sessionId);
+  const expectedReviewFile = `${config.swarmStatePath}/plan-reviews/${sessionId}.json`;
+  const { wait } = await openCompletionWaiter(client, sessionId, 600_000, expectedReviewFile);
   await client.session.prompt({
     path: { id: sessionId },
     body: {
@@ -514,7 +518,17 @@ export async function revisePlan(
         ? { providerID: config.model.split("/", 2)[0], modelID: config.model.split("/", 2)[1] }
         : { providerID: "anthropic", modelID: config.model });
 
-  const { wait } = await openCompletionWaiter(client, plannerSessionId);
+  // Delete the existing plan file (from the first spawnPlanner call) so the
+  // existence check in openCompletionWaiter triggers on the new submission.
+  const expectedPlanFile = `${config.swarmStatePath}/plans/${plannerSessionId}.json`;
+  try {
+    const { unlinkSync } = await import("node:fs");
+    unlinkSync(expectedPlanFile);
+  } catch {
+    // File didn't exist — fine
+  }
+
+  const { wait } = await openCompletionWaiter(client, plannerSessionId, 600_000, expectedPlanFile);
   await client.session.prompt({
     path: { id: plannerSessionId },
     body: {
@@ -762,7 +776,10 @@ ${reviewerRules}`;
 
   // Static reviewers: 5 min. qa-evaluator: 10 min (needs to start the app, test endpoints, clean up)
   const reviewerTimeoutMs = isFunctionalReviewer ? 10 * 60 * 1000 : 5 * 60 * 1000;
-  const { wait } = await openCompletionWaiter(client, sessionId, reviewerTimeoutMs);
+  // Pass expected output file so multi-step agents (especially qa-evaluator)
+  // don't resolve on intermediate session.idle events.
+  const expectedReviewFile = `${config.swarmStatePath}/reviews/${sessionId}.json`;
+  const { wait } = await openCompletionWaiter(client, sessionId, reviewerTimeoutMs, expectedReviewFile);
 
   const userPrompt = isFunctionalReviewer
     ? `Run the application and test the changed features.

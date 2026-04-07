@@ -21,6 +21,23 @@ import {
 import type { GateResult } from "./regression-gate.js";
 
 // ---------------------------------------------------------------------------
+// Transient retry — OpenCode SDK occasionally throws "fetch failed" on
+// session.prompt(). Retry once after a short backoff so a single TCP blip
+// doesn't kill an agent's whole work product.
+// ---------------------------------------------------------------------------
+async function runWithRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!msg.includes("fetch failed")) throw err;
+    logger.warn("Transient fetch failed — retrying once", { label });
+    await new Promise((r) => setTimeout(r, 3000));
+    return await fn();
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Dependency injection interface — all external calls are injectable
 // ---------------------------------------------------------------------------
 
@@ -366,7 +383,10 @@ export async function runOrchestrator(
       if (!claimed) return;
 
       try {
-        const result = await deps.agents.spawnAgent(persona, task, config);
+        const result = await runWithRetry(
+          () => deps.agents.spawnAgent(persona, task, config),
+          `agent ${persona.id} on ${task.id}`,
+        );
         usage.add(persona.id, result.usage);
         completedTasks++;
         checkpoint.completedTaskIds.push(task.id);
@@ -431,7 +451,10 @@ export async function runOrchestrator(
 
     const reviewPromises = reviewPersonas.map(async (persona) => {
       try {
-        const output = await deps.agents.spawnReviewer(persona, currentLoop, config);
+        const output = await runWithRetry(
+          () => deps.agents.spawnReviewer(persona, currentLoop, config),
+          `reviewer ${persona.id}`,
+        );
         usage.add(persona.id, output.usage);
         return {
           reviewerId: persona.id,
@@ -441,6 +464,7 @@ export async function runOrchestrator(
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         errors.push(`Reviewer ${persona.id} failed: ${msg}`);
+        logger.error("Reviewer failed", { persona: persona.id, error: msg });
         return null;
       }
     });
