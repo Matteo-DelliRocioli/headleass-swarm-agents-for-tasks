@@ -3,6 +3,8 @@
 // ---------------------------------------------------------------------------
 
 import { logger } from "./logger.js";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { OrchestratorConfig } from "./config.js";
 import type { Persona } from "./persona-loader.js";
 import type { BeadsTask } from "./beads.js";
@@ -16,6 +18,25 @@ import {
   type CompletedMessage,
   type MessagePart,
 } from "./llm-wait.js";
+
+/**
+ * Read structured output that was written by a submit_* tool.
+ * Returns null if the file doesn't exist (LLM forgot to call the tool —
+ * caller should fall back to text parsing).
+ */
+async function readSubmittedOutput<T>(
+  swarmStatePath: string,
+  category: "plans" | "plan-reviews" | "reviews",
+  sessionID: string,
+): Promise<T | null> {
+  const filePath = join(swarmStatePath, category, `${sessionID}.json`);
+  try {
+    const raw = await readFile(filePath, "utf-8");
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
 
 // The OpenCode SDK client type — we use dynamic import since it may not be
 // available at compile time in all environments.
@@ -240,14 +261,10 @@ export async function spawnPlanner(
 - test-writer: Unit, integration, e2e tests
 - devops-agent: Docker, CI/CD, deployment
 
-## Critical Output Rules
-1. You will be given a prompt to decompose into tasks
-2. Explore /workspace using read/glob/grep to understand existing code
-3. Decompose the prompt into 1-12 atomic tasks
-4. Each task MUST have a suggested_persona from the list above
-5. For prompts spanning multiple domains (e.g., backend + HTML), CREATE SEPARATE TASKS
-6. YOUR FINAL MESSAGE MUST CONTAIN ONLY VALID JSON — no prose, no markdown, no preamble
-7. The orchestrator will parse your final message as JSON. If it fails, the run fails.`;
+## How to Submit Your Plan
+You MUST call the \`submit_plan\` tool with your structured plan as the FINAL action.
+The tool's args ARE the plan. Do not also output JSON in your message text.
+The orchestrator reads the tool's structured args directly — message text is ignored.`;
 
   // Open SSE waiter BEFORE sending the prompt to avoid missing the completion event
   const { wait } = await openCompletionWaiter(client, sessionId);
@@ -265,17 +282,36 @@ export async function spawnPlanner(
 ${initialPrompt}
 ---
 
-Explore the workspace first (read package.json, glob the directory tree). Then output your final response as a JSON object matching this schema (NO prose, NO markdown fences, JSON ONLY):
+## Steps
+1. Explore the workspace BRIEFLY (read package.json, glob top-level dirs). Don't read every file.
+2. Identify components and decide on task decomposition.
+3. For multi-component prompts (backend + frontend, API + database), include an integration task.
+4. Call the \`submit_plan\` tool with your final plan. The tool's args ARE the plan.
 
-${JSON.stringify(PLANNER_JSON_SCHEMA, null, 2)}
-
-Remember: assign distinct domains to distinct personas. If the prompt mentions both backend (API/server) and frontend (HTML/UI) work, create at least two tasks with different suggested_persona.`,
+Do NOT output JSON in your message text — call the tool instead.`,
       }],
     },
   });
   const completed = await wait;
 
-  const plan = extractPlannerOutput(completed.parts);
+  // Try to read the plan from the file written by submit_plan tool first
+  const submitted = await readSubmittedOutput<PlannerOutput>(
+    config.swarmStatePath,
+    "plans",
+    sessionId,
+  );
+
+  let plan: PlannerOutput;
+  if (submitted && Array.isArray(submitted.tasks) && submitted.tasks.length > 0) {
+    plan = submitted;
+    logger.info("Planner submitted plan via tool", { sessionId, taskCount: plan.tasks.length });
+  } else {
+    // Fallback: parse from message text (legacy path)
+    plan = extractPlannerOutput(completed.parts);
+    if (plan.tasks.length > 0) {
+      logger.warn("Planner did not call submit_plan tool — used text fallback", { sessionId, taskCount: plan.tasks.length });
+    }
+  }
 
   logger.info("Planner completed", {
     sessionId,
@@ -345,11 +381,10 @@ export async function reviewPlan(
 
   const systemPrompt = `${reviewerPersona.content}
 
-## Critical Output Rules
-1. You will be given a task decomposition plan to review
-2. Review the plan against the evaluation criteria
-3. YOUR FINAL MESSAGE MUST CONTAIN ONLY VALID JSON — no prose, no markdown, no preamble
-4. The orchestrator will parse your final message as JSON. If it fails, the run continues with default approval.`;
+## How to Submit Your Review
+You MUST call the \`submit_plan_review\` tool with your structured assessment as the FINAL action.
+The tool's args ARE the review. Do not also output JSON in your message text.
+The orchestrator reads the tool's structured args directly — message text is ignored.`;
 
   const { wait } = await openCompletionWaiter(client, sessionId);
   await client.session.prompt({
@@ -378,18 +413,38 @@ ${planJson}
 5. **Completeness**: covers the full prompt?
 6. **Priority**: sensible? critical path items P0/P1?
 7. **Domain separation**: backend and frontend work in SEPARATE tasks?
+8. **Integration tasks**: are there tasks to wire components together?
 
 Score 0.8+ means good to execute. Below 0.8 needs revision.
 
-Output your final response as JSON matching this schema (NO prose, NO markdown fences, JSON ONLY):
-
-${JSON.stringify(PLAN_REVIEW_SCHEMA, null, 2)}`,
+Call \`submit_plan_review\` with your assessment as your final action.`,
       }],
     },
   });
   const completed = await wait;
 
-  const result = extractPlanReview(completed.parts);
+  // Try to read the review from the file written by submit_plan_review tool
+  const submitted = await readSubmittedOutput<{
+    approved: boolean;
+    score: number;
+    feedback: string;
+    issues: Array<{ task_title: string; issue: string }>;
+  }>(config.swarmStatePath, "plan-reviews", sessionId);
+
+  let result: PlanReviewResult;
+  if (submitted) {
+    result = {
+      approved: submitted.approved,
+      score: submitted.score,
+      feedback: submitted.feedback,
+      issues: submitted.issues ?? [],
+    };
+    logger.info("Plan reviewer submitted via tool", { sessionId, score: result.score });
+  } else {
+    // Fallback: parse from message text
+    result = extractPlanReview(completed.parts);
+    logger.warn("Plan reviewer did not call submit_plan_review tool — used text fallback", { sessionId });
+  }
 
   logger.info("Plan review completed", {
     approved: result.approved,
@@ -478,13 +533,27 @@ ${review.feedback}
 ### Specific Issues
 ${issueList}
 
-Revise your plan to address this feedback. YOUR FINAL MESSAGE MUST CONTAIN ONLY VALID JSON (no prose, no markdown fences) matching the same schema as before.`,
+Revise your plan to address this feedback. Call the \`submit_plan\` tool with your revised plan as your final action. The tool's args ARE the plan — do not output JSON in your message text.`,
       }],
     },
   });
   const completed = await wait;
 
-  const plan = extractPlannerOutput(completed.parts);
+  // Try to read the revised plan from the file written by submit_plan tool
+  const submitted = await readSubmittedOutput<PlannerOutput>(
+    config.swarmStatePath,
+    "plans",
+    plannerSessionId,
+  );
+
+  let plan: PlannerOutput;
+  if (submitted && Array.isArray(submitted.tasks) && submitted.tasks.length > 0) {
+    plan = submitted;
+    logger.info("Plan revision submitted via tool", { iteration, taskCount: plan.tasks.length });
+  } else {
+    plan = extractPlannerOutput(completed.parts);
+    logger.warn("Plan revision did not call submit_plan tool — used text fallback", { iteration });
+  }
 
   logger.info("Plan revision completed", {
     iteration,
@@ -654,17 +723,22 @@ You are reviewing loop ${loopNumber} of a swarm run. The implementation agents h
 
 ${memoryContext}
 
-## Critical Output Rules
-1. Use read/glob/grep to inspect the changed files
-2. Analyze them according to your specialty
-3. YOUR FINAL MESSAGE MUST CONTAIN ONLY VALID JSON — no prose, no markdown, no preamble, no "I'll start by..."
-4. The orchestrator parses your final message as JSON with fields: score (0-1), issues (array)
-5. If your final message is not valid JSON, your review is recorded as score 0.5 with no issues (the fallback)`;
+## How to Submit Your Review
+You MUST call the \`submit_review\` tool with your structured assessment as the FINAL action.
+The tool's args ARE the review (score + issues). Do not also output JSON in your message text.
+The orchestrator reads the tool's structured args directly — message text is ignored.
+
+## Efficiency Rules (CRITICAL — to avoid timeout)
+- Use \`bash: git diff HEAD~1\` to see ONLY the changes made in the last commit
+- Do NOT read every file in /workspace — read only the files that changed
+- Do NOT use glob or grep to enumerate the whole tree
+- Spend at most 2-3 tool calls before submitting your review`;
 
   // Request structured review output via agent + system fields
   const { providerID, modelID } = resolveModel(persona, config);
 
-  const { wait } = await openCompletionWaiter(client, sessionId);
+  // Use shorter timeout for reviewers (5 min) — they should be focused
+  const { wait } = await openCompletionWaiter(client, sessionId, 5 * 60 * 1000);
   await client.session.prompt({
     path: { id: sessionId },
     body: {
@@ -673,23 +747,42 @@ ${memoryContext}
       system: systemPrompt,
       parts: [{
         type: "text",
-        text: `Review all changes made in /workspace. Analyze code quality, security, and architecture according to your role.
+        text: `Review the changes from this loop.
 
-Use git log and git diff to see what changed, then read the relevant files.
+## How to be efficient
+1. Run \`git diff HEAD~1\` (or \`git diff HEAD\` if there's only one commit) to see ONLY the changes
+2. Read at most 3-5 files that look most relevant to your specialty
+3. Call the \`submit_review\` tool with your assessment
 
-Output your final response as a JSON object matching this schema (NO prose, NO markdown fences, JSON ONLY):
-
-${JSON.stringify(REVIEW_JSON_SCHEMA, null, 2)}
-
-Example response (this is the EXACT format your final message must match):
-{"score": 0.85, "issues": [{"severity": "medium", "description": "Missing input validation in /api/users", "file": "src/routes/users.js", "line": 42}]}`,
+Do NOT explore the whole workspace. Focus on what changed.
+Do NOT output JSON in your message text — call the tool instead.
+Your review will be submitted via the tool's args (score + issues).`,
       }],
     },
   });
   const completed = await wait;
 
-  // Parse the structured review output and extract usage from the completed message
-  const parsed = extractReviewOutput(completed.parts, persona.id);
+  // Try to read the review from the file written by submit_review tool
+  const submitted = await readSubmittedOutput<{
+    score: number;
+    issues: ReviewerOutput["issues"];
+  }>(config.swarmStatePath, "reviews", sessionId);
+
+  let parsed: { score: number; issues: ReviewerOutput["issues"] };
+  if (submitted) {
+    parsed = {
+      score: typeof submitted.score === "number" ? Math.max(0, Math.min(1, submitted.score)) : 0.5,
+      issues: Array.isArray(submitted.issues) ? submitted.issues : [],
+    };
+    logger.info("Reviewer submitted via tool", { sessionId, persona: persona.id, score: parsed.score });
+  } else {
+    // Fallback: parse from message text
+    parsed = extractReviewOutput(completed.parts, persona.id);
+    logger.warn("Reviewer did not call submit_review tool — used text fallback", {
+      sessionId,
+      persona: persona.id,
+    });
+  }
   const usage = usageFromMessage(completed);
 
   logger.info("Reviewer completed", {
